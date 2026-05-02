@@ -189,7 +189,86 @@ def train(
     learning_rate: float,
     iterations: int,
 ) -> dict[str, float]:
-    m = len(mileages)
+    """
+    Train a simple linear regression model using gradient descent.
+
+    The model learns the relationship between car mileage
+    and car price using the equation:
+
+    :contentReference[oaicite:0]{index=0}
+
+    Where:
+        - x is the mileage
+        - theta0 is the intercept
+        - theta1 is the slope
+        - y_hat is the predicted price
+
+    The training process uses gradient descent to minimize
+    the prediction error by iteratively updating theta0
+    and theta1.
+
+    Before training, mileage values are normalized to improve
+    convergence speed and numerical stability.
+
+    Normalization formula:
+
+    :contentReference[oaicite:1]{index=1}
+
+    Gradient descent update rules:
+
+    :contentReference[oaicite:2]{index=2}
+
+    :contentReference[oaicite:3]{index=3}
+
+    After training, the normalized parameters are converted
+    back to the original mileage scale:
+
+    
+::contentReference[oaicite:4]{index=4}
+
+
+    Training steps:
+        1. Compute dataset mean and standard deviation
+        2. Normalize mileage values
+        3. Initialize parameters to zero
+        4. Compute prediction errors
+        5. Compute gradients
+        6. Update theta parameters
+        7. Convert normalized parameters back
+           to the original scale
+
+    Args:
+        mileages (list[float]):
+            List of car mileage values.
+
+        prices (list[float]):
+            List of corresponding car prices.
+
+        learning_rate (float):
+            Step size used during gradient descent.
+
+        iterations (int):
+            Number of training iterations.
+
+    Returns:
+        dict[str, float]:
+            Dictionary containing:
+                - theta0
+                - theta1
+                - normalized_theta0
+                - normalized_theta1
+                - km_mean
+                - km_std
+                - learning_rate
+                - iterations
+                - samples
+
+    Raises:
+        ValueError:
+            If all mileage values are identical,
+            making standard deviation equal to zero.
+    """
+     m = len(mileages)
     km_mean = mean(mileages)
     km_std = std(mileages, km_mean)
     if km_std == 0:
