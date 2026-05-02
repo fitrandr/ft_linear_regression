@@ -54,7 +54,6 @@ def load_dataset(path: Path) -> tuple[list[float], list[float]]:
         ValueError:
             If the dataset is empty.
     """
-
     mileages: list[float] = []
     prices: list[float] = []
 
@@ -71,3 +70,165 @@ def load_dataset(path: Path) -> tuple[list[float], list[float]]:
     return mileages, prices
 
 
+def estimate_price(mileage: float, theta0: float, theta1: float) -> float:
+    """
+    Estimate the price of a car using a linear regression model.
+
+    This function applies the linear regression formula:
+
+    :contentReference[oaicite:0]{index=0}
+
+    Where:
+        - x represents the mileage of the car
+        - theta0 is the intercept
+        - theta1 is the slope (weight)
+        - y_hat is the predicted price
+
+    Example:
+        mileage = 50000
+        theta0 = 20000
+        theta1 = -0.1
+
+        estimated_price =
+            20000 + (-0.1 * 50000)
+            = 15000
+
+    Args:
+        mileage (float):
+            Car mileage in kilometers.
+
+        theta0 (float):
+            Intercept of the regression line.
+
+        theta1 (float):
+            Slope coefficient of the regression line.
+
+    Returns:
+        float:
+            Estimated car price predicted
+            by the linear regression model.
+    """
+    return theta0 + theta1 * mileage
+
+
+def mean(values: list[float]) -> float:
+    """
+    Compute the arithmetic mean of a list of numbers.
+
+    The mean is calculated by dividing the sum of all
+    values by the total number of elements.
+
+    Formula:
+
+    :contentReference[oaicite:0]{index=0}
+
+    Example:
+        values = [2, 4, 6]
+
+        mean =
+            (2 + 4 + 6) / 3
+            = 4
+
+    Args:
+        values (list[float]):
+            List of numeric values.
+
+    Returns:
+        float:
+            Arithmetic mean of the values.
+    """
+    return sum(values) / len(values)
+
+
+def std(values: list[float], values_mean: float) -> float:
+    """
+    Compute the standard deviation of a list of numbers.
+
+    Standard deviation measures how spread out
+    the values are around the mean.
+
+    The variance is computed first:
+
+    :contentReference[oaicite:1]{index=1}
+
+    Then the standard deviation is obtained
+    by taking the square root of the variance:
+
+    :contentReference[oaicite:2]{index=2}
+
+    Example:
+        values = [2, 4, 6]
+        mean = 4
+
+        variance =
+            ((2 - 4)^2 + (4 - 4)^2 + (6 - 4)^2) / 3
+            = 2.666...
+
+        std =
+            sqrt(2.666...)
+            = 1.632...
+
+    Args:
+        values (list[float]):
+            List of numeric values.
+
+        values_mean (float):
+            Mean of the values.
+
+    Returns:
+        float:
+            Standard deviation of the dataset.
+    """
+    variance = sum((value - values_mean) ** 2 for value in values) / len(values)
+    return variance**0.5
+
+
+def train(
+    mileages: list[float],
+    prices: list[float],
+    learning_rate: float,
+    iterations: int,
+) -> dict[str, float]:
+    m = len(mileages)
+    km_mean = mean(mileages)
+    km_std = std(mileages, km_mean)
+    if km_std == 0:
+        raise ValueError("All mileage values are identical; cannot train a slope.")
+
+    norm_mileages = [(km - km_mean) / km_std for km in mileages]
+
+    theta0 = 0.0
+    theta1 = 0.0
+
+    for _ in range(iterations):
+        gradient0 = 0.0
+        gradient1 = 0.0
+
+        for mileage, price in zip(norm_mileages, prices):
+            error = estimate_price(mileage, theta0, theta1) - price
+            gradient0 += error
+            gradient1 += error * mileage
+
+        tmp_theta0 = theta0 - learning_rate * (gradient0 / m)
+        tmp_theta1 = theta1 - learning_rate * (gradient1 / m)
+
+        theta0 = tmp_theta0
+        theta1 = tmp_theta1
+
+    # Convert parameters back to raw mileage scale:
+    # y = theta0 + theta1 * ((x - mu) / sigma)
+    #   = (theta0 - theta1 * mu / sigma) + (theta1 / sigma) * x
+    raw_theta1 = theta1 / km_std
+    raw_theta0 = theta0 - (theta1 * km_mean / km_std)
+
+    return {
+        "theta0": raw_theta0,
+        "theta1": raw_theta1,
+        "normalized_theta0": theta0,
+        "normalized_theta1": theta1,
+        "km_mean": km_mean,
+        "km_std": km_std,
+        "learning_rate": learning_rate,
+        "iterations": iterations,
+        "samples": m,
+    }
