@@ -5,13 +5,66 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import logging
 import math
 import random
-import sys
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
 
 EPSILON = 1e-12
+LOGGER_NAME = "ft_linear_regression.train"
+
+DatasetSplit = tuple[list[float], list[float], list[float], list[float]]
+
+
+@dataclass(frozen=True)
+class LinearModel:
+    theta0: float
+    theta1: float
+    normalized_theta0: float
+    normalized_theta1: float
+    km_mean: float
+    km_std: float
+
+    def predict(self, mileage: float) -> float:
+        return estimate_price(mileage, self.theta0, self.theta1)
+
+
+@dataclass(frozen=True)
+class TrainingLogEntry:
+    iteration: int
+    mse: float
+
+
+@dataclass(frozen=True)
+class TrainingResult:
+    model: LinearModel
+    learning_rate: float
+    iterations: int
+    log_every: int
+    samples: int
+    history: tuple[TrainingLogEntry, ...]
+
+
+@dataclass(frozen=True)
+class EvaluationMetrics:
+    train_mse: float
+    test_mse: float
+
+
+def configure_logging(verbosity: str) -> logging.Logger:
+    """Configure logger for CLI output verbosity."""
+    levels = {
+        "quiet": logging.WARNING,
+        "info": logging.INFO,
+        "debug": logging.DEBUG,
+    }
+    logging.basicConfig(
+        level=levels[verbosity],
+        format="%(message)s",
+        force=True,
+    )
+    return logging.getLogger(LOGGER_NAME)
 
 
 def load_dataset(path: Path) -> tuple[list[float], list[float]]:
@@ -86,18 +139,18 @@ def estimate_price(mileage: float, theta0: float, theta1: float) -> float:
     return theta0 + theta1 * mileage
 
 
-def predict(model: dict[str, float], mileage: float) -> float:
-    """Predict price from a saved model dict using raw-scale theta values."""
-    return estimate_price(mileage, model["theta0"], model["theta1"])
+def predict(model: LinearModel, mileage: float) -> float:
+    """Predict price from a typed model object."""
+    return model.predict(mileage)
 
 
-def mse(mileages: list[float], prices: list[float], theta0: float, theta1: float) -> float:
+def mse(mileages: list[float], prices: list[float], model: LinearModel) -> float:
     """Compute Mean Squared Error."""
     validate_pairs(mileages, prices)
     m = len(mileages)
     total = 0.0
     for km, price in zip(mileages, prices):
-        error = estimate_price(km, theta0, theta1) - price
+        error = predict(model, km) - price
         total += error * error
     return total / m
 
@@ -107,7 +160,7 @@ def split_dataset(
     prices: list[float],
     test_ratio: float = 0.2,
     seed: int = 42,
-) -> tuple[list[float], list[float], list[float], list[float]]:
+) -> DatasetSplit:
     """Split dataset into train/test subsets."""
     validate_pairs(mileages, prices)
     if not 0.0 < test_ratio < 1.0:
@@ -140,7 +193,8 @@ def train(
     learning_rate: float,
     iterations: int,
     log_every: int,
-) -> dict[str, Any]:
+    logger: logging.Logger,
+) -> TrainingResult:
     """Train linear regression with gradient descent."""
     validate_pairs(mileages, prices)
     if learning_rate <= 0:
@@ -159,52 +213,131 @@ def train(
     norm_mileages = [(km - km_mean) / km_std for km in mileages]
     theta0 = 0.0
     theta1 = 0.0
-
-    history: list[dict[str, float | int]] = []
+    history: list[TrainingLogEntry] = []
 
     for iteration in range(1, iterations + 1):
         gradient0 = 0.0
         gradient1 = 0.0
+        squared_error_sum = 0.0
 
         for mileage, price in zip(norm_mileages, prices):
             error = estimate_price(mileage, theta0, theta1) - price
             gradient0 += error
             gradient1 += error * mileage
-
-        theta0 -= learning_rate * (gradient0 / m)
-        theta1 -= learning_rate * (gradient1 / m)
+            squared_error_sum += error * error
 
         should_log = (
             log_every > 0
             and (iteration == 1 or iteration == iterations or iteration % log_every == 0)
         )
         if should_log:
-            raw_theta1 = theta1 / km_std
-            raw_theta0 = theta0 - (theta1 * km_mean / km_std)
-            train_mse = mse(mileages, prices, raw_theta0, raw_theta1)
-            history.append({"iteration": iteration, "mse": train_mse})
-            print(f"Iteration {iteration}/{iterations} - Train MSE: {train_mse:.6f}")
+            train_mse = squared_error_sum / m
+            history.append(TrainingLogEntry(iteration=iteration, mse=train_mse))
+            logger.info("Iteration %d/%d - Train MSE: %.6f", iteration, iterations, train_mse)
 
-    raw_theta1 = theta1 / km_std
-    raw_theta0 = theta0 - (theta1 * km_mean / km_std)
+        theta0 -= learning_rate * (gradient0 / m)
+        theta1 -= learning_rate * (gradient1 / m)
 
-    return {
-        "model": {
-            "theta0": raw_theta0,
-            "theta1": raw_theta1,
-            "normalized_theta0": theta0,
-            "normalized_theta1": theta1,
-            "km_mean": km_mean,
-            "km_std": km_std,
-        },
+    model = LinearModel(
+        theta0=theta0 - (theta1 * km_mean / km_std),
+        theta1=theta1 / km_std,
+        normalized_theta0=theta0,
+        normalized_theta1=theta1,
+        km_mean=km_mean,
+        km_std=km_std,
+    )
+
+    return TrainingResult(
+        model=model,
+        learning_rate=learning_rate,
+        iterations=iterations,
+        log_every=log_every,
+        samples=m,
+        history=tuple(history),
+    )
+
+
+def train_pipeline(
+    dataset_path: Path,
+    learning_rate: float,
+    iterations: int,
+    test_ratio: float,
+    seed: int,
+    log_every: int,
+    logger: logging.Logger,
+) -> tuple[TrainingResult, DatasetSplit]:
+    """Load data, split, and train model."""
+    mileages, prices = load_dataset(dataset_path)
+    split = split_dataset(mileages, prices, test_ratio=test_ratio, seed=seed)
+    train_mileages, train_prices, test_mileages, _ = split
+    logger.debug("Dataset loaded: %d samples", len(mileages))
+    logger.info(
+        "Dataset split complete: %d train / %d test",
+        len(train_mileages),
+        len(test_mileages),
+    )
+
+    result = train(
+        train_mileages,
+        train_prices,
+        learning_rate=learning_rate,
+        iterations=iterations,
+        log_every=log_every,
+        logger=logger,
+    )
+    return result, split
+
+
+def evaluate_pipeline(model: LinearModel, split: DatasetSplit) -> EvaluationMetrics:
+    """Compute train/test evaluation metrics for a trained model."""
+    train_mileages, train_prices, test_mileages, test_prices = split
+    return EvaluationMetrics(
+        train_mse=mse(train_mileages, train_prices, model),
+        test_mse=mse(test_mileages, test_prices, model),
+    )
+
+
+def build_payload(
+    training_result: TrainingResult,
+    metrics: EvaluationMetrics,
+    split: DatasetSplit,
+    test_ratio: float,
+    seed: int,
+) -> dict[str, object]:
+    """Build JSON-serializable payload for model persistence."""
+    train_mileages, _, test_mileages, _ = split
+    model_payload = asdict(training_result.model)
+    history_payload = [asdict(entry) for entry in training_result.history]
+
+    payload: dict[str, object] = {
+        # Backward-compatible top-level model parameters.
+        "theta0": training_result.model.theta0,
+        "theta1": training_result.model.theta1,
+        "km_mean": training_result.model.km_mean,
+        "km_std": training_result.model.km_std,
+        "normalized_theta0": training_result.model.normalized_theta0,
+        "normalized_theta1": training_result.model.normalized_theta1,
+        # Structured sections.
+        "model": model_payload,
         "training": {
-            "learning_rate": learning_rate,
-            "iterations": iterations,
-            "samples": m,
-            "log_every": log_every,
+            "learning_rate": training_result.learning_rate,
+            "iterations": training_result.iterations,
+            "samples": training_result.samples,
+            "log_every": training_result.log_every,
+            "train_samples": len(train_mileages),
+            "test_samples": len(test_mileages),
+            "test_ratio": test_ratio,
+            "seed": seed,
         },
-        "history": history,
+        "metrics": asdict(metrics),
+        "history": history_payload,
     }
+    return payload
+
+
+def save_model(model_path: Path, payload: dict[str, object]) -> None:
+    """Serialize and save trained model payload."""
+    model_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:
@@ -248,73 +381,53 @@ def parse_args() -> argparse.Namespace:
         "--log-every",
         type=int,
         default=1000,
-        help="Print train MSE every N iterations (0 disables logs)",
+        help="Log train MSE every N iterations (0 disables progress logs)",
+    )
+    parser.add_argument(
+        "--verbosity",
+        choices=("quiet", "info", "debug"),
+        default="info",
+        help="CLI verbosity level (default: info)",
     )
     return parser.parse_args()
 
 
 def main() -> None:
-    """Train, evaluate (train/test), and save a regression model."""
-    try:
-        args = parse_args()
-        dataset_path = Path(args.dataset)
-        model_path = Path(args.model)
+    """Train, evaluate, and save linear regression model."""
+    args = parse_args()
+    logger = configure_logging(args.verbosity)
 
-        mileages, prices = load_dataset(dataset_path)
-        train_mileages, train_prices, test_mileages, test_prices = split_dataset(
-            mileages,
-            prices,
+    try:
+        model_path = Path(args.model)
+        training_result, split = train_pipeline(
+            dataset_path=Path(args.dataset),
+            learning_rate=args.learning_rate,
+            iterations=args.iterations,
+            test_ratio=args.test_ratio,
+            seed=args.seed,
+            log_every=args.log_every,
+            logger=logger,
+        )
+        metrics = evaluate_pipeline(training_result.model, split)
+        payload = build_payload(
+            training_result=training_result,
+            metrics=metrics,
+            split=split,
             test_ratio=args.test_ratio,
             seed=args.seed,
         )
+        save_model(model_path, payload)
 
-        training_result = train(
-            train_mileages,
-            train_prices,
-            learning_rate=args.learning_rate,
-            iterations=args.iterations,
-            log_every=args.log_every,
-        )
-        model = training_result["model"]
-
-        train_mse = mse(train_mileages, train_prices, model["theta0"], model["theta1"])
-        test_mse = mse(test_mileages, test_prices, model["theta0"], model["theta1"])
-
-        payload = {
-            # Backward-compatible top-level model parameters.
-            "theta0": model["theta0"],
-            "theta1": model["theta1"],
-            "km_mean": model["km_mean"],
-            "km_std": model["km_std"],
-            "normalized_theta0": model["normalized_theta0"],
-            "normalized_theta1": model["normalized_theta1"],
-            # Structured sections for cleaner architecture.
-            "model": model,
-            "training": {
-                **training_result["training"],
-                "train_samples": len(train_mileages),
-                "test_samples": len(test_mileages),
-                "test_ratio": args.test_ratio,
-                "seed": args.seed,
-            },
-            "metrics": {
-                "train_mse": train_mse,
-                "test_mse": test_mse,
-            },
-            "history": training_result["history"],
-        }
-
-        model_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-        print(f"Training complete on {len(train_mileages)} train samples.")
-        print(f"Evaluation complete on {len(test_mileages)} test samples.")
-        print(f"theta0    = {model['theta0']:.6f}")
-        print(f"theta1    = {model['theta1']:.6f}")
-        print(f"Train MSE = {train_mse:.6f}")
-        print(f"Test MSE  = {test_mse:.6f}")
-        print(f"Model saved to {model_path}")
+        train_mileages, _, test_mileages, _ = split
+        logger.info("Training complete on %d train samples.", len(train_mileages))
+        logger.info("Evaluation complete on %d test samples.", len(test_mileages))
+        logger.info("theta0    = %.6f", training_result.model.theta0)
+        logger.info("theta1    = %.6f", training_result.model.theta1)
+        logger.info("Train MSE = %.6f", metrics.train_mse)
+        logger.info("Test MSE  = %.6f", metrics.test_mse)
+        logger.info("Model saved to %s", model_path)
     except (ValueError, FileNotFoundError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        logger.error("Error: %s", exc)
         raise SystemExit(1)
 
 
