@@ -311,3 +311,123 @@ def train(
         "iterations": iterations,
         "samples": m,
     }
+
+
+def mse(
+    mileages: list[float],
+    prices: list[float],
+    theta0: float,
+    theta1: float
+) -> float:
+    """
+    Compute the Mean Squared Error (MSE) of a linear regression model.
+
+    The MSE measures how far the predicted values are from the real values
+    on average. It is commonly used as a loss function in regression.
+
+    Formula:
+
+    :contentReference[oaicite:0]{index=0}
+
+    Where:
+        - m is the number of samples
+        - y_hat is the predicted value
+        - y is the true value
+
+    In this implementation, predictions are computed using:
+
+    :contentReference[oaicite:1]{index=1}
+
+    Example:
+        mileages = [1000, 2000]
+        prices = [10, 20]
+        theta0 = 5
+        theta1 = 0.01
+
+        predictions:
+            5 + 0.01*1000 = 15
+            5 + 0.01*2000 = 25
+
+        squared errors:
+            (15 - 10)^2 = 25
+            (25 - 20)^2 = 25
+
+        MSE = (25 + 25) / 2 = 25
+
+    Args:
+        mileages (list[float]):
+            Input feature values (car mileage).
+
+        prices (list[float]):
+            True target values (car prices).
+
+        theta0 (float):
+            Intercept of the model.
+
+        theta1 (float):
+            Slope of the model.
+
+    Returns:
+        float:
+            Mean Squared Error of the model.
+    """
+    m = len(mileages)
+    return sum((estimate_price(km, theta0, theta1) - price) ** 2 for km, price in zip(mileages, prices)) / m
+
+
+def parse_args() -> argparse.Namespace:
+    """
+    Parse command-line arguments for training a linear regression model.
+
+    This function defines and parses CLI arguments used to configure
+    the training pipeline, including dataset path, output model path,
+    learning rate, and number of iterations.
+
+    Example usage:
+        python train.py --dataset data.csv --model model.json
+
+    Available arguments:
+        --dataset:
+            Path to the input CSV dataset.
+            Default: data.csv
+
+        --model:
+            Path where the trained model will be saved.
+            Default: model.json
+
+        --learning-rate:
+            Step size used for gradient descent optimization.
+            Default: 0.1
+
+        --iterations:
+            Number of gradient descent iterations.
+            Default: 10000
+
+    Returns:
+        argparse.Namespace:
+            Object containing all parsed command-line arguments.
+    """
+    parser = argparse.ArgumentParser(description="Train linear regression on data.csv")
+    parser.add_argument(
+        "--dataset",
+        default="data.csv",
+        help="Path to CSV dataset (default: data.csv)",
+    )
+    parser.add_argument(
+        "--model",
+        default="model.json",
+        help="Path to output model file (default: model.json)",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.1,
+        help="Gradient descent learning rate (default: 0.1)",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=10000,
+        help="Number of training iterations (default: 10000)",
+    )
+    return parser.parse_args()
