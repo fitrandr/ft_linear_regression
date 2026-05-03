@@ -1,186 +1,137 @@
-#!/usr/bin/env ./env/bin/python3
+#!/usr/bin/env python3
 
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import math
+import random
+import sys
 from pathlib import Path
+from typing import Any
+
+EPSILON = 1e-12
+
 
 def load_dataset(path: Path) -> tuple[list[float], list[float]]:
-    """
-    Load a CSV dataset containing car mileage and price information.
-
-    The CSV file must contain two columns:
-        - km
-        - price
-
-    Each row is read using csv.DictReader, which converts
-    the CSV rows into dictionaries using the header names
-    as keys.
-
-    Example CSV:
-        km,price
-        24000,15000
-        35000,12000
-
-    Example row produced by DictReader:
-        {
-            "km": "24000",
-            "price": "15000"
-        }
-
-    The function:
-        1. Opens the CSV file
-        2. Checks that required columns exist
-        3. Converts values to float
-        4. Stores them into two separate lists
-        5. Returns both lists
-
-    Args:
-        path (Path):
-            Path to the CSV dataset file.
-
-    Returns:
-        tuple[list[float], list[float]]:
-            - First list contains mileage values
-            - Second list contains price values
-
-    Raises:
-        ValueError:
-            If the CSV does not contain 'km'
-            or 'price' columns.
-
-        ValueError:
-            If the dataset is empty.
-    """
+    """Load dataset from CSV and validate numeric values."""
     mileages: list[float] = []
     prices: list[float] = []
 
     with path.open(newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
-        if "km" not in reader.fieldnames or "price" not in reader.fieldnames:
+
+        raw_headers = reader.fieldnames or []
+        header_map: dict[str, str] = {}
+        for header in raw_headers:
+            if header is not None:
+                header_map[header.strip()] = header
+
+        if "km" not in header_map or "price" not in header_map:
             raise ValueError("CSV must contain 'km' and 'price' columns.")
-        for row in reader:
-            mileages.append(float(row["km"]))
-            prices.append(float(row["price"]))
+
+        km_key = header_map["km"]
+        price_key = header_map["price"]
+
+        for line_no, row in enumerate(reader, start=2):
+            raw_km = (row.get(km_key) or "").strip()
+            raw_price = (row.get(price_key) or "").strip()
+
+            if raw_km == "" or raw_price == "":
+                raise ValueError(f"Missing value at line {line_no}: {row}")
+
+            try:
+                km = float(raw_km)
+                price = float(raw_price)
+            except ValueError as exc:
+                raise ValueError(f"Invalid numeric value at line {line_no}: {row}") from exc
+
+            if not math.isfinite(km) or not math.isfinite(price):
+                raise ValueError(f"Non-finite numeric value at line {line_no}: {row}")
+
+            mileages.append(km)
+            prices.append(price)
 
     if not mileages:
         raise ValueError("Dataset is empty.")
     return mileages, prices
 
 
-def estimate_price(mileage: float, theta0: float, theta1: float) -> float:
-    """
-    Estimate the price of a car using a linear regression model.
-
-    This function applies the linear regression formula:
-
-    :contentReference[oaicite:0]{index=0}
-
-    Where:
-        - x represents the mileage of the car
-        - theta0 is the intercept
-        - theta1 is the slope (weight)
-        - y_hat is the predicted price
-
-    Example:
-        mileage = 50000
-        theta0 = 20000
-        theta1 = -0.1
-
-        estimated_price =
-            20000 + (-0.1 * 50000)
-            = 15000
-
-    Args:
-        mileage (float):
-            Car mileage in kilometers.
-
-        theta0 (float):
-            Intercept of the regression line.
-
-        theta1 (float):
-            Slope coefficient of the regression line.
-
-    Returns:
-        float:
-            Estimated car price predicted
-            by the linear regression model.
-    """
-    return theta0 + theta1 * mileage
+def validate_pairs(mileages: list[float], prices: list[float]) -> None:
+    """Validate feature/target pairing constraints."""
+    if not mileages or not prices:
+        raise ValueError("mileages and prices must not be empty.")
+    if len(mileages) != len(prices):
+        raise ValueError("mileages and prices must have the same number of samples.")
 
 
 def mean(values: list[float]) -> float:
-    """
-    Compute the arithmetic mean of a list of numbers.
-
-    The mean is calculated by dividing the sum of all
-    values by the total number of elements.
-
-    Formula:
-
-    :contentReference[oaicite:0]{index=0}
-
-    Example:
-        values = [2, 4, 6]
-
-        mean =
-            (2 + 4 + 6) / 3
-            = 4
-
-    Args:
-        values (list[float]):
-            List of numeric values.
-
-    Returns:
-        float:
-            Arithmetic mean of the values.
-    """
+    """Return arithmetic mean."""
+    if not values:
+        raise ValueError("Cannot compute mean of an empty list.")
     return sum(values) / len(values)
 
 
 def std(values: list[float], values_mean: float) -> float:
-    """
-    Compute the standard deviation of a list of numbers.
-
-    Standard deviation measures how spread out
-    the values are around the mean.
-
-    The variance is computed first:
-
-    :contentReference[oaicite:1]{index=1}
-
-    Then the standard deviation is obtained
-    by taking the square root of the variance:
-
-    :contentReference[oaicite:2]{index=2}
-
-    Example:
-        values = [2, 4, 6]
-        mean = 4
-
-        variance =
-            ((2 - 4)^2 + (4 - 4)^2 + (6 - 4)^2) / 3
-            = 2.666...
-
-        std =
-            sqrt(2.666...)
-            = 1.632...
-
-    Args:
-        values (list[float]):
-            List of numeric values.
-
-        values_mean (float):
-            Mean of the values.
-
-    Returns:
-        float:
-            Standard deviation of the dataset.
-    """
+    """Return population standard deviation."""
+    if not values:
+        raise ValueError("Cannot compute std of an empty list.")
     variance = sum((value - values_mean) ** 2 for value in values) / len(values)
     return variance**0.5
+
+
+def estimate_price(mileage: float, theta0: float, theta1: float) -> float:
+    """Linear regression hypothesis: y_hat = theta0 + theta1 * x."""
+    return theta0 + theta1 * mileage
+
+
+def predict(model: dict[str, float], mileage: float) -> float:
+    """Predict price from a saved model dict using raw-scale theta values."""
+    return estimate_price(mileage, model["theta0"], model["theta1"])
+
+
+def mse(mileages: list[float], prices: list[float], theta0: float, theta1: float) -> float:
+    """Compute Mean Squared Error."""
+    validate_pairs(mileages, prices)
+    m = len(mileages)
+    total = 0.0
+    for km, price in zip(mileages, prices):
+        error = estimate_price(km, theta0, theta1) - price
+        total += error * error
+    return total / m
+
+
+def split_dataset(
+    mileages: list[float],
+    prices: list[float],
+    test_ratio: float = 0.2,
+    seed: int = 42,
+) -> tuple[list[float], list[float], list[float], list[float]]:
+    """Split dataset into train/test subsets."""
+    validate_pairs(mileages, prices)
+    if not 0.0 < test_ratio < 1.0:
+        raise ValueError("test_ratio must be in the interval (0, 1).")
+
+    m = len(mileages)
+    if m < 2:
+        raise ValueError("At least 2 samples are required for train/test split.")
+
+    indices = list(range(m))
+    random.Random(seed).shuffle(indices)
+
+    test_size = max(1, int(m * test_ratio))
+    if test_size >= m:
+        test_size = m - 1
+
+    test_indices = indices[:test_size]
+    train_indices = indices[test_size:]
+
+    train_mileages = [mileages[i] for i in train_indices]
+    train_prices = [prices[i] for i in train_indices]
+    test_mileages = [mileages[i] for i in test_indices]
+    test_prices = [prices[i] for i in test_indices]
+    return train_mileages, train_prices, test_mileages, test_prices
 
 
 def train(
@@ -188,98 +139,30 @@ def train(
     prices: list[float],
     learning_rate: float,
     iterations: int,
-) -> dict[str, float]:
-    """
-    Train a simple linear regression model using gradient descent.
+    log_every: int,
+) -> dict[str, Any]:
+    """Train linear regression with gradient descent."""
+    validate_pairs(mileages, prices)
+    if learning_rate <= 0:
+        raise ValueError("learning_rate must be > 0.")
+    if iterations <= 0:
+        raise ValueError("iterations must be > 0.")
+    if log_every < 0:
+        raise ValueError("log_every must be >= 0.")
 
-    The model learns the relationship between car mileage
-    and car price using the equation:
-
-    :contentReference[oaicite:0]{index=0}
-
-    Where:
-        - x is the mileage
-        - theta0 is the intercept
-        - theta1 is the slope
-        - y_hat is the predicted price
-
-    The training process uses gradient descent to minimize
-    the prediction error by iteratively updating theta0
-    and theta1.
-
-    Before training, mileage values are normalized to improve
-    convergence speed and numerical stability.
-
-    Normalization formula:
-
-    :contentReference[oaicite:1]{index=1}
-
-    Gradient descent update rules:
-
-    :contentReference[oaicite:2]{index=2}
-
-    :contentReference[oaicite:3]{index=3}
-
-    After training, the normalized parameters are converted
-    back to the original mileage scale:
-
-    
-::contentReference[oaicite:4]{index=4}
-
-
-    Training steps:
-        1. Compute dataset mean and standard deviation
-        2. Normalize mileage values
-        3. Initialize parameters to zero
-        4. Compute prediction errors
-        5. Compute gradients
-        6. Update theta parameters
-        7. Convert normalized parameters back
-           to the original scale
-
-    Args:
-        mileages (list[float]):
-            List of car mileage values.
-
-        prices (list[float]):
-            List of corresponding car prices.
-
-        learning_rate (float):
-            Step size used during gradient descent.
-
-        iterations (int):
-            Number of training iterations.
-
-    Returns:
-        dict[str, float]:
-            Dictionary containing:
-                - theta0
-                - theta1
-                - normalized_theta0
-                - normalized_theta1
-                - km_mean
-                - km_std
-                - learning_rate
-                - iterations
-                - samples
-
-    Raises:
-        ValueError:
-            If all mileage values are identical,
-            making standard deviation equal to zero.
-    """
     m = len(mileages)
     km_mean = mean(mileages)
     km_std = std(mileages, km_mean)
-    if km_std == 0:
-        raise ValueError("All mileage values are identical; cannot train a slope.")
+    if km_std < EPSILON:
+        raise ValueError("Mileage variance is too small; cannot train a stable slope.")
 
     norm_mileages = [(km - km_mean) / km_std for km in mileages]
-
     theta0 = 0.0
     theta1 = 0.0
 
-    for _ in range(iterations):
+    history: list[dict[str, float | int]] = []
+
+    for iteration in range(1, iterations + 1):
         gradient0 = 0.0
         gradient1 = 0.0
 
@@ -288,125 +171,44 @@ def train(
             gradient0 += error
             gradient1 += error * mileage
 
-        tmp_theta0 = theta0 - learning_rate * (gradient0 / m)
-        tmp_theta1 = theta1 - learning_rate * (gradient1 / m)
+        theta0 -= learning_rate * (gradient0 / m)
+        theta1 -= learning_rate * (gradient1 / m)
 
-        theta0 = tmp_theta0
-        theta1 = tmp_theta1
+        should_log = (
+            log_every > 0
+            and (iteration == 1 or iteration == iterations or iteration % log_every == 0)
+        )
+        if should_log:
+            raw_theta1 = theta1 / km_std
+            raw_theta0 = theta0 - (theta1 * km_mean / km_std)
+            train_mse = mse(mileages, prices, raw_theta0, raw_theta1)
+            history.append({"iteration": iteration, "mse": train_mse})
+            print(f"Iteration {iteration}/{iterations} - Train MSE: {train_mse:.6f}")
 
-    # Convert parameters back to raw mileage scale:
-    # y = theta0 + theta1 * ((x - mu) / sigma)
-    #   = (theta0 - theta1 * mu / sigma) + (theta1 / sigma) * x
     raw_theta1 = theta1 / km_std
     raw_theta0 = theta0 - (theta1 * km_mean / km_std)
 
     return {
-        "theta0": raw_theta0,
-        "theta1": raw_theta1,
-        "normalized_theta0": theta0,
-        "normalized_theta1": theta1,
-        "km_mean": km_mean,
-        "km_std": km_std,
-        "learning_rate": learning_rate,
-        "iterations": iterations,
-        "samples": m,
+        "model": {
+            "theta0": raw_theta0,
+            "theta1": raw_theta1,
+            "normalized_theta0": theta0,
+            "normalized_theta1": theta1,
+            "km_mean": km_mean,
+            "km_std": km_std,
+        },
+        "training": {
+            "learning_rate": learning_rate,
+            "iterations": iterations,
+            "samples": m,
+            "log_every": log_every,
+        },
+        "history": history,
     }
 
 
-def mse(
-    mileages: list[float],
-    prices: list[float],
-    theta0: float,
-    theta1: float
-) -> float:
-    """
-    Compute the Mean Squared Error (MSE) of a linear regression model.
-
-    The MSE measures how far the predicted values are from the real values
-    on average. It is commonly used as a loss function in regression.
-
-    Formula:
-
-    :contentReference[oaicite:0]{index=0}
-
-    Where:
-        - m is the number of samples
-        - y_hat is the predicted value
-        - y is the true value
-
-    In this implementation, predictions are computed using:
-
-    :contentReference[oaicite:1]{index=1}
-
-    Example:
-        mileages = [1000, 2000]
-        prices = [10, 20]
-        theta0 = 5
-        theta1 = 0.01
-
-        predictions:
-            5 + 0.01*1000 = 15
-            5 + 0.01*2000 = 25
-
-        squared errors:
-            (15 - 10)^2 = 25
-            (25 - 20)^2 = 25
-
-        MSE = (25 + 25) / 2 = 25
-
-    Args:
-        mileages (list[float]):
-            Input feature values (car mileage).
-
-        prices (list[float]):
-            True target values (car prices).
-
-        theta0 (float):
-            Intercept of the model.
-
-        theta1 (float):
-            Slope of the model.
-
-    Returns:
-        float:
-            Mean Squared Error of the model.
-    """
-    m = len(mileages)
-    return sum((estimate_price(km, theta0, theta1) - price) ** 2 for km, price in zip(mileages, prices)) / m
-
-
 def parse_args() -> argparse.Namespace:
-    """
-    Parse command-line arguments for training a linear regression model.
-
-    This function defines and parses CLI arguments used to configure
-    the training pipeline, including dataset path, output model path,
-    learning rate, and number of iterations.
-
-    Example usage:
-        python train.py --dataset data.csv --model model.json
-
-    Available arguments:
-        --dataset:
-            Path to the input CSV dataset.
-            Default: data.csv
-
-        --model:
-            Path where the trained model will be saved.
-            Default: model.json
-
-        --learning-rate:
-            Step size used for gradient descent optimization.
-            Default: 0.1
-
-        --iterations:
-            Number of gradient descent iterations.
-            Default: 10000
-
-    Returns:
-        argparse.Namespace:
-            Object containing all parsed command-line arguments.
-    """
+    """Parse CLI arguments."""
     parser = argparse.ArgumentParser(description="Train linear regression on data.csv")
     parser.add_argument(
         "--dataset",
@@ -430,55 +232,91 @@ def parse_args() -> argparse.Namespace:
         default=10000,
         help="Number of training iterations (default: 10000)",
     )
+    parser.add_argument(
+        "--test-ratio",
+        type=float,
+        default=0.2,
+        help="Test split ratio in (0, 1) (default: 0.2)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed used for train/test split (default: 42)",
+    )
+    parser.add_argument(
+        "--log-every",
+        type=int,
+        default=1000,
+        help="Print train MSE every N iterations (0 disables logs)",
+    )
     return parser.parse_args()
 
+
 def main() -> None:
-    """
-    Entry point of the training pipeline.
+    """Train, evaluate (train/test), and save a regression model."""
+    try:
+        args = parse_args()
+        dataset_path = Path(args.dataset)
+        model_path = Path(args.model)
 
-    This function orchestrates the full workflow of the linear regression project:
-        1. Parses command-line arguments
-        2. Loads the dataset from a CSV file
-        3. Trains a linear regression model using gradient descent
-        4. Saves the trained model to a JSON file
-        5. Evaluates the model using Mean Squared Error (MSE)
-        6. Displays training results in the console
+        mileages, prices = load_dataset(dataset_path)
+        train_mileages, train_prices, test_mileages, test_prices = split_dataset(
+            mileages,
+            prices,
+            test_ratio=args.test_ratio,
+            seed=args.seed,
+        )
 
-    Workflow:
-        - Read CLI arguments (dataset path, model path, hyperparameters)
-        - Load (mileages, prices) dataset
-        - Train model to obtain theta parameters
-        - Save model parameters to disk
-        - Compute final training error (MSE)
-        - Print summary of results
+        training_result = train(
+            train_mileages,
+            train_prices,
+            learning_rate=args.learning_rate,
+            iterations=args.iterations,
+            log_every=args.log_every,
+        )
+        model = training_result["model"]
 
-    Output example:
-        Training complete on 1000 samples.
-        theta0 = 1234.567890
-        theta1 = -0.045678
-        MSE    = 345.123456
-        Model saved to model.json
-    """
-    args = parse_args()
-    dataset_path = Path(args.dataset)
-    model_path = Path(args.model)
+        train_mse = mse(train_mileages, train_prices, model["theta0"], model["theta1"])
+        test_mse = mse(test_mileages, test_prices, model["theta0"], model["theta1"])
 
-    mileages, prices = load_dataset(dataset_path)
-    model = train(
-        mileages,
-        prices,
-        learning_rate=args.learning_rate,
-        iterations=args.iterations,
-    )
+        payload = {
+            # Backward-compatible top-level model parameters.
+            "theta0": model["theta0"],
+            "theta1": model["theta1"],
+            "km_mean": model["km_mean"],
+            "km_std": model["km_std"],
+            "normalized_theta0": model["normalized_theta0"],
+            "normalized_theta1": model["normalized_theta1"],
+            # Structured sections for cleaner architecture.
+            "model": model,
+            "training": {
+                **training_result["training"],
+                "train_samples": len(train_mileages),
+                "test_samples": len(test_mileages),
+                "test_ratio": args.test_ratio,
+                "seed": args.seed,
+            },
+            "metrics": {
+                "train_mse": train_mse,
+                "test_mse": test_mse,
+            },
+            "history": training_result["history"],
+        }
 
-    model_path.write_text(json.dumps(model, indent=2), encoding="utf-8")
+        model_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    current_mse = mse(mileages, prices, model["theta0"], model["theta1"])
-    print(f"Training complete on {model['samples']} samples.")
-    print(f"theta0 = {model['theta0']:.6f}")
-    print(f"theta1 = {model['theta1']:.6f}")
-    print(f"MSE    = {current_mse:.6f}")
-    print(f"Model saved to {model_path}")
+        print(f"Training complete on {len(train_mileages)} train samples.")
+        print(f"Evaluation complete on {len(test_mileages)} test samples.")
+        print(f"theta0    = {model['theta0']:.6f}")
+        print(f"theta1    = {model['theta1']:.6f}")
+        print(f"Train MSE = {train_mse:.6f}")
+        print(f"Test MSE  = {test_mse:.6f}")
+        print(f"Model saved to {model_path}")
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+
 
 if __name__ == "__main__":
     main()
