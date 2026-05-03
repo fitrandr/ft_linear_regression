@@ -431,3 +431,54 @@ def parse_args() -> argparse.Namespace:
         help="Number of training iterations (default: 10000)",
     )
     return parser.parse_args()
+
+def main() -> None:
+    """
+    Entry point of the training pipeline.
+
+    This function orchestrates the full workflow of the linear regression project:
+        1. Parses command-line arguments
+        2. Loads the dataset from a CSV file
+        3. Trains a linear regression model using gradient descent
+        4. Saves the trained model to a JSON file
+        5. Evaluates the model using Mean Squared Error (MSE)
+        6. Displays training results in the console
+
+    Workflow:
+        - Read CLI arguments (dataset path, model path, hyperparameters)
+        - Load (mileages, prices) dataset
+        - Train model to obtain theta parameters
+        - Save model parameters to disk
+        - Compute final training error (MSE)
+        - Print summary of results
+
+    Output example:
+        Training complete on 1000 samples.
+        theta0 = 1234.567890
+        theta1 = -0.045678
+        MSE    = 345.123456
+        Model saved to model.json
+    """
+    args = parse_args()
+    dataset_path = Path(args.dataset)
+    model_path = Path(args.model)
+
+    mileages, prices = load_dataset(dataset_path)
+    model = train(
+        mileages,
+        prices,
+        learning_rate=args.learning_rate,
+        iterations=args.iterations,
+    )
+
+    model_path.write_text(json.dumps(model, indent=2), encoding="utf-8")
+
+    current_mse = mse(mileages, prices, model["theta0"], model["theta1"])
+    print(f"Training complete on {model['samples']} samples.")
+    print(f"theta0 = {model['theta0']:.6f}")
+    print(f"theta1 = {model['theta1']:.6f}")
+    print(f"MSE    = {current_mse:.6f}")
+    print(f"Model saved to {model_path}")
+
+if __name__ == "__main__":
+    main()
