@@ -268,7 +268,7 @@ def train(
             If all mileage values are identical,
             making standard deviation equal to zero.
     """
-     m = len(mileages)
+    m = len(mileages)
     km_mean = mean(mileages)
     km_std = std(mileages, km_mean)
     if km_std == 0:
