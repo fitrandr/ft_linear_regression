@@ -41,8 +41,13 @@ class TrainingResult:
     model: LinearModel
     learning_rate: float
     iterations: int
+    iterations_ran: int
     log_every: int
     samples: int
+    stopped_early: bool
+    best_train_mse: float
+    early_stopping_patience: int
+    early_stopping_min_delta: float
     history: tuple[TrainingLogEntry, ...]
 
 
@@ -50,6 +55,14 @@ class TrainingResult:
 class EvaluationMetrics:
     train_mse: float
     test_mse: float
+
+
+@dataclass(frozen=True)
+class PipelineOutput:
+    model_path: Path
+    training_result: TrainingResult
+    metrics: EvaluationMetrics
+    split: DatasetSplit
 
 
 def configure_logging(verbosity: str) -> logging.Logger:
@@ -139,18 +152,13 @@ def estimate_price(mileage: float, theta0: float, theta1: float) -> float:
     return theta0 + theta1 * mileage
 
 
-def predict(model: LinearModel, mileage: float) -> float:
-    """Predict price from a typed model object."""
-    return model.predict(mileage)
-
-
 def mse(mileages: list[float], prices: list[float], model: LinearModel) -> float:
     """Compute Mean Squared Error."""
     validate_pairs(mileages, prices)
     m = len(mileages)
     total = 0.0
     for km, price in zip(mileages, prices):
-        error = predict(model, km) - price
+        error = model.predict(km) - price
         total += error * error
     return total / m
 
@@ -193,6 +201,8 @@ def train(
     learning_rate: float,
     iterations: int,
     log_every: int,
+    early_stopping_patience: int,
+    early_stopping_min_delta: float,
     logger: logging.Logger,
 ) -> TrainingResult:
     """Train linear regression with gradient descent."""
@@ -203,6 +213,10 @@ def train(
         raise ValueError("iterations must be > 0.")
     if log_every < 0:
         raise ValueError("log_every must be >= 0.")
+    if early_stopping_patience <= 0:
+        raise ValueError("early_stopping_patience must be > 0.")
+    if early_stopping_min_delta < 0:
+        raise ValueError("early_stopping_min_delta must be >= 0.")
 
     m = len(mileages)
     km_mean = mean(mileages)
@@ -214,6 +228,10 @@ def train(
     theta0 = 0.0
     theta1 = 0.0
     history: list[TrainingLogEntry] = []
+    best_train_mse = float("inf")
+    no_improvement_count = 0
+    stopped_early = False
+    iterations_ran = iterations
 
     for iteration in range(1, iterations + 1):
         gradient0 = 0.0
@@ -230,13 +248,32 @@ def train(
             log_every > 0
             and (iteration == 1 or iteration == iterations or iteration % log_every == 0)
         )
+        train_mse = squared_error_sum / m
+
         if should_log:
-            train_mse = squared_error_sum / m
             history.append(TrainingLogEntry(iteration=iteration, mse=train_mse))
             logger.info("Iteration %d/%d - Train MSE: %.6f", iteration, iterations, train_mse)
 
         theta0 -= learning_rate * (gradient0 / m)
         theta1 -= learning_rate * (gradient1 / m)
+
+        if train_mse < best_train_mse - early_stopping_min_delta:
+            best_train_mse = train_mse
+            no_improvement_count = 0
+        else:
+            no_improvement_count += 1
+
+        if no_improvement_count >= early_stopping_patience:
+            stopped_early = True
+            iterations_ran = iteration
+            if log_every > 0 and not should_log:
+                history.append(TrainingLogEntry(iteration=iteration, mse=train_mse))
+            logger.info(
+                "Early stopping at iteration %d (best train MSE: %.6f).",
+                iteration,
+                best_train_mse,
+            )
+            break
 
     model = LinearModel(
         theta0=theta0 - (theta1 * km_mean / km_std),
@@ -251,8 +288,13 @@ def train(
         model=model,
         learning_rate=learning_rate,
         iterations=iterations,
+        iterations_ran=iterations_ran,
         log_every=log_every,
         samples=m,
+        stopped_early=stopped_early,
+        best_train_mse=best_train_mse,
+        early_stopping_patience=early_stopping_patience,
+        early_stopping_min_delta=early_stopping_min_delta,
         history=tuple(history),
     )
 
@@ -264,6 +306,8 @@ def train_pipeline(
     test_ratio: float,
     seed: int,
     log_every: int,
+    early_stopping_patience: int,
+    early_stopping_min_delta: float,
     logger: logging.Logger,
 ) -> tuple[TrainingResult, DatasetSplit]:
     """Load data, split, and train model."""
@@ -283,6 +327,8 @@ def train_pipeline(
         learning_rate=learning_rate,
         iterations=iterations,
         log_every=log_every,
+        early_stopping_patience=early_stopping_patience,
+        early_stopping_min_delta=early_stopping_min_delta,
         logger=logger,
     )
     return result, split
@@ -322,8 +368,13 @@ def build_payload(
         "training": {
             "learning_rate": training_result.learning_rate,
             "iterations": training_result.iterations,
+            "iterations_ran": training_result.iterations_ran,
             "samples": training_result.samples,
             "log_every": training_result.log_every,
+            "stopped_early": training_result.stopped_early,
+            "best_train_mse": training_result.best_train_mse,
+            "early_stopping_patience": training_result.early_stopping_patience,
+            "early_stopping_min_delta": training_result.early_stopping_min_delta,
             "train_samples": len(train_mileages),
             "test_samples": len(test_mileages),
             "test_ratio": test_ratio,
@@ -338,6 +389,47 @@ def build_payload(
 def save_model(model_path: Path, payload: dict[str, object]) -> None:
     """Serialize and save trained model payload."""
     model_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def run_pipeline(args: argparse.Namespace, logger: logging.Logger) -> PipelineOutput:
+    """Run full train/evaluate/save pipeline and log final summary."""
+    model_path = Path(args.model)
+    training_result, split = train_pipeline(
+        dataset_path=Path(args.dataset),
+        learning_rate=args.learning_rate,
+        iterations=args.iterations,
+        test_ratio=args.test_ratio,
+        seed=args.seed,
+        log_every=args.log_every,
+        early_stopping_patience=args.early_stopping_patience,
+        early_stopping_min_delta=args.early_stopping_min_delta,
+        logger=logger,
+    )
+    metrics = evaluate_pipeline(training_result.model, split)
+    payload = build_payload(
+        training_result=training_result,
+        metrics=metrics,
+        split=split,
+        test_ratio=args.test_ratio,
+        seed=args.seed,
+    )
+    save_model(model_path, payload)
+
+    train_mileages, _, test_mileages, _ = split
+    logger.info("Training complete on %d train samples.", len(train_mileages))
+    logger.info("Evaluation complete on %d test samples.", len(test_mileages))
+    logger.info("theta0    = %.6f", training_result.model.theta0)
+    logger.info("theta1    = %.6f", training_result.model.theta1)
+    logger.info("Train MSE = %.6f", metrics.train_mse)
+    logger.info("Test MSE  = %.6f", metrics.test_mse)
+    logger.info("Model saved to %s", model_path)
+
+    return PipelineOutput(
+        model_path=model_path,
+        training_result=training_result,
+        metrics=metrics,
+        split=split,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -384,6 +476,18 @@ def parse_args() -> argparse.Namespace:
         help="Log train MSE every N iterations (0 disables progress logs)",
     )
     parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=300,
+        help="Stop if train loss does not improve for N iterations (default: 300)",
+    )
+    parser.add_argument(
+        "--early-stopping-min-delta",
+        type=float,
+        default=1e-6,
+        help="Minimum train-loss improvement to reset patience (default: 1e-6)",
+    )
+    parser.add_argument(
         "--verbosity",
         choices=("quiet", "info", "debug"),
         default="info",
@@ -398,34 +502,7 @@ def main() -> None:
     logger = configure_logging(args.verbosity)
 
     try:
-        model_path = Path(args.model)
-        training_result, split = train_pipeline(
-            dataset_path=Path(args.dataset),
-            learning_rate=args.learning_rate,
-            iterations=args.iterations,
-            test_ratio=args.test_ratio,
-            seed=args.seed,
-            log_every=args.log_every,
-            logger=logger,
-        )
-        metrics = evaluate_pipeline(training_result.model, split)
-        payload = build_payload(
-            training_result=training_result,
-            metrics=metrics,
-            split=split,
-            test_ratio=args.test_ratio,
-            seed=args.seed,
-        )
-        save_model(model_path, payload)
-
-        train_mileages, _, test_mileages, _ = split
-        logger.info("Training complete on %d train samples.", len(train_mileages))
-        logger.info("Evaluation complete on %d test samples.", len(test_mileages))
-        logger.info("theta0    = %.6f", training_result.model.theta0)
-        logger.info("theta1    = %.6f", training_result.model.theta1)
-        logger.info("Train MSE = %.6f", metrics.train_mse)
-        logger.info("Test MSE  = %.6f", metrics.test_mse)
-        logger.info("Model saved to %s", model_path)
+        run_pipeline(args, logger)
     except (ValueError, FileNotFoundError) as exc:
         logger.error("Error: %s", exc)
         raise SystemExit(1)
