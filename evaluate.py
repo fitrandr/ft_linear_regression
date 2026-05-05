@@ -13,10 +13,11 @@ from pathlib import Path
 
 from predictor.engine import load_model, predict
 from predictor.model import Model, ModelPolicy
+from trainer.data import split_dataset
 
 LOGGER_NAME = "ft_linear_regression.evaluate"
 EPSILON = 1e-12
-R2_UNDEFINED: None = None
+OUTLIER_Z_THRESHOLD = 3.0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -33,10 +34,29 @@ class RegressionMetrics:
 
 
 @dataclasses.dataclass(frozen=True)
-class EvaluationResult:
-    samples: int
+class MetricsComparison:
     model: RegressionMetrics
     baseline: RegressionMetrics
+    delta_mse: float
+    signal_to_noise_ratio: float | None
+    usefulness_score: float | None
+
+
+@dataclasses.dataclass(frozen=True)
+class SplitInfo:
+    test_ratio: float
+    seed: int
+    train_samples: int
+    test_samples: int
+
+
+@dataclasses.dataclass(frozen=True)
+class EvaluationResult:
+    samples: int
+    full: MetricsComparison
+    train: MetricsComparison
+    test: MetricsComparison
+    split: SplitInfo
     mileage_price_correlation: float | None
 
 
@@ -46,11 +66,28 @@ class EvaluateArgs:
     model_path: Path
     json_output: bool
     report_path: Path | None
+    test_ratio: float
+    seed: int
+
+
+@dataclasses.dataclass(frozen=True)
+class ErrorStats:
+    residuals: tuple[float, ...]
+    abs_error_sum: float
+    sq_error_sum: float
+    max_abs_error: float
 
 
 def configure_logging() -> logging.Logger:
-    logging.basicConfig(level=logging.WARNING, format="%(message)s", force=True)
-    return logging.getLogger(LOGGER_NAME)
+    logger = logging.getLogger(LOGGER_NAME)
+    logger.handlers.clear()
+    logger.propagate = False
+    logger.setLevel(logging.WARNING)
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(handler)
+    return logger
 
 
 def mean(values: list[float]) -> float:
@@ -99,15 +136,15 @@ def load_dataset(path: Path) -> tuple[list[float], list[float]]:
 
             km = _parse_finite_float(raw_km, field="km", line_no=line_no)
             price = _parse_finite_float(raw_price, field="price", line_no=line_no)
-
             mileages.append(km)
             prices.append(price)
 
+    if not mileages:
+        raise ValueError("Dataset is empty.")
     return mileages, prices
 
 
 def validate_dataset(mileages: list[float], prices: list[float]) -> None:
-    """Single source of truth for dataset validation in evaluation flow."""
     if not mileages or not prices:
         raise ValueError("Empty dataset.")
     if len(mileages) != len(prices):
@@ -125,73 +162,121 @@ def validate_dataset(mileages: list[float], prices: list[float]) -> None:
         raise ValueError("Not enough variance in mileage.")
 
 
-def _compute_metrics(prices: list[float], predictions: list[float]) -> RegressionMetrics:
+def compute_errors(prices: list[float], predictions: list[float]) -> ErrorStats:
     if not prices:
         raise ValueError("Empty dataset: cannot compute metrics.")
     if len(prices) != len(predictions):
         raise ValueError("Mismatched prediction and target sizes.")
 
-    m = len(prices)
-
+    residuals: list[float] = []
     abs_error_sum = 0.0
     sq_error_sum = 0.0
-    error_sum = 0.0
-    price_sum = 0.0
-    price_sq_sum = 0.0
     max_abs_error = 0.0
 
-    for idx in range(m):
-        actual = prices[idx]
-        predicted = predictions[idx]
-        error = predicted - actual
-        abs_error = abs(error)
-        sq_error = error * error
+    for actual, predicted in zip(prices, predictions):
+        residual = predicted - actual
+        abs_residual = abs(residual)
+        sq_residual = residual * residual
 
-        abs_error_sum += abs_error
-        sq_error_sum += sq_error
-        error_sum += error
-        price_sum += actual
-        price_sq_sum += actual * actual
-        if abs_error > max_abs_error:
-            max_abs_error = abs_error
+        residuals.append(residual)
+        abs_error_sum += abs_residual
+        sq_error_sum += sq_residual
+        if abs_residual > max_abs_error:
+            max_abs_error = abs_residual
 
-    mse = sq_error_sum / m
-    mean_error = error_sum / m
-    error_variance = (sq_error_sum / m) - (mean_error * mean_error)
+    return ErrorStats(
+        residuals=tuple(residuals),
+        abs_error_sum=abs_error_sum,
+        sq_error_sum=sq_error_sum,
+        max_abs_error=max_abs_error,
+    )
+
+
+def compute_variance_stats(residuals: tuple[float, ...], sq_error_sum: float) -> tuple[float, float, int]:
+    sample_count = len(residuals)
+    if sample_count == 0:
+        raise ValueError("Cannot compute variance stats on empty residuals.")
+
+    mean_error = sum(residuals) / sample_count
+    error_variance = (sq_error_sum / sample_count) - (mean_error * mean_error)
     if error_variance < 0.0:
         error_variance = 0.0
     error_std = error_variance**0.5
 
-    outlier_threshold = 3.0 * error_std
     outlier_count = 0
-    if outlier_threshold > 0.0:
-        for idx in range(m):
-            residual = predictions[idx] - prices[idx]
-            if abs(residual) > outlier_threshold:
+    if error_std > 0.0:
+        for residual in residuals:
+            z_score = (residual - mean_error) / error_std
+            if abs(z_score) > OUTLIER_Z_THRESHOLD:
                 outlier_count += 1
 
-    r2: float | None
-    r2_defined: bool
-    ss_tot = price_sq_sum - ((price_sum * price_sum) / m)
-    if ss_tot < 0.0 and abs(ss_tot) < EPSILON:
-        ss_tot = 0.0
+    return mean_error, error_std, outlier_count
+
+
+def compute_r2(prices: list[float], sq_error_sum: float) -> tuple[float | None, bool]:
+    if not prices:
+        raise ValueError("Empty dataset: cannot compute R2.")
+
+    y_mean = mean(prices)
+    ss_tot = 0.0
+    for value in prices:
+        centered = value - y_mean
+        ss_tot += centered * centered
+
     if ss_tot < EPSILON:
-        r2 = R2_UNDEFINED
-        r2_defined = False
-    else:
-        r2 = 1.0 - (sq_error_sum / ss_tot)
-        r2_defined = True
+        return None, False
+    return 1.0 - (sq_error_sum / ss_tot), True
+
+
+def compute_metrics(prices: list[float], predictions: list[float]) -> RegressionMetrics:
+    errors = compute_errors(prices, predictions)
+    sample_count = len(prices)
+    mse = errors.sq_error_sum / sample_count
+    mean_error, error_std, outlier_count = compute_variance_stats(
+        errors.residuals, errors.sq_error_sum
+    )
+    r2, r2_defined = compute_r2(prices, errors.sq_error_sum)
 
     return RegressionMetrics(
-        mae=abs_error_sum / m,
+        mae=errors.abs_error_sum / sample_count,
         mse=mse,
         rmse=mse**0.5,
         r2=r2,
         r2_defined=r2_defined,
         mean_error=mean_error,
         error_std=error_std,
-        max_abs_error=max_abs_error,
+        max_abs_error=errors.max_abs_error,
         outlier_count=outlier_count,
+    )
+
+
+def compare_with_baseline(prices: list[float], model_predictions: list[float]) -> MetricsComparison:
+    model_metrics = compute_metrics(prices, model_predictions)
+
+    baseline_value = mean(prices)
+    baseline_predictions = [baseline_value] * len(prices)
+    baseline_metrics = compute_metrics(prices, baseline_predictions)
+
+    delta_mse = baseline_metrics.mse - model_metrics.mse
+
+    signal_to_noise_ratio: float | None
+    if model_metrics.mse <= EPSILON:
+        signal_to_noise_ratio = None
+    else:
+        signal_to_noise_ratio = baseline_metrics.mse / model_metrics.mse
+
+    usefulness_score: float | None
+    if baseline_metrics.mse <= EPSILON:
+        usefulness_score = None
+    else:
+        usefulness_score = delta_mse / baseline_metrics.mse
+
+    return MetricsComparison(
+        model=model_metrics,
+        baseline=baseline_metrics,
+        delta_mse=delta_mse,
+        signal_to_noise_ratio=signal_to_noise_ratio,
+        usefulness_score=usefulness_score,
     )
 
 
@@ -201,128 +286,118 @@ def correlation(values_x: list[float], values_y: list[float]) -> float | None:
     if not values_x:
         raise ValueError("Empty series for correlation.")
 
-    n = len(values_x)
-    sum_x = 0.0
-    sum_y = 0.0
-    sum_x2 = 0.0
-    sum_y2 = 0.0
-    sum_xy = 0.0
+    x_mean = mean(values_x)
+    y_mean = mean(values_y)
 
-    for idx in range(n):
-        x = values_x[idx]
-        y = values_y[idx]
-        sum_x += x
-        sum_y += y
-        sum_x2 += x * x
-        sum_y2 += y * y
-        sum_xy += x * y
+    covariance = 0.0
+    variance_x = 0.0
+    variance_y = 0.0
 
-    numerator = (n * sum_xy) - (sum_x * sum_y)
-    denom_left = (n * sum_x2) - (sum_x * sum_x)
-    denom_right = (n * sum_y2) - (sum_y * sum_y)
-    if denom_left < EPSILON or denom_right < EPSILON:
+    for x_value, y_value in zip(values_x, values_y):
+        x_centered = x_value - x_mean
+        y_centered = y_value - y_mean
+        covariance += x_centered * y_centered
+        variance_x += x_centered * x_centered
+        variance_y += y_centered * y_centered
+
+    if variance_x < EPSILON or variance_y < EPSILON:
         return None
-    denominator = (denom_left * denom_right) ** 0.5
-    if denominator < EPSILON:
-        return None
-    return numerator / denominator
+    return covariance / ((variance_x * variance_y) ** 0.5)
 
 
-def evaluate(mileages: list[float], prices: list[float], model: Model) -> EvaluationResult:
+def evaluate(
+    mileages: list[float],
+    prices: list[float],
+    model: Model,
+    test_ratio: float,
+    seed: int,
+) -> EvaluationResult:
     validate_dataset(mileages, prices)
 
-    predictions = predict(model, mileages)
-    model_metrics = _compute_metrics(prices, predictions)
+    full_predictions = predict(model, mileages)
+    full_comparison = compare_with_baseline(prices, full_predictions)
 
-    baseline_value = mean(prices)
-    baseline_predictions = [baseline_value] * len(prices)
-    baseline_metrics = _compute_metrics(prices, baseline_predictions)
+    train_mileages, train_prices, test_mileages, test_prices = split_dataset(
+        mileages, prices, test_ratio=test_ratio, seed=seed
+    )
+    train_predictions = predict(model, train_mileages)
+    test_predictions = predict(model, test_mileages)
+
+    train_comparison = compare_with_baseline(train_prices, train_predictions)
+    test_comparison = compare_with_baseline(test_prices, test_predictions)
 
     return EvaluationResult(
         samples=len(prices),
-        model=model_metrics,
-        baseline=baseline_metrics,
+        full=full_comparison,
+        train=train_comparison,
+        test=test_comparison,
+        split=SplitInfo(
+            test_ratio=test_ratio,
+            seed=seed,
+            train_samples=len(train_mileages),
+            test_samples=len(test_mileages),
+        ),
         mileage_price_correlation=correlation(mileages, prices),
     )
-
-
-def _serialize_metrics(metrics: RegressionMetrics) -> dict[str, float | int | bool | None]:
-    return {
-        "mae": metrics.mae,
-        "mse": metrics.mse,
-        "rmse": metrics.rmse,
-        "r2": metrics.r2,
-        "r2_defined": metrics.r2_defined,
-        "mean_error": metrics.mean_error,
-        "error_std": metrics.error_std,
-        "max_abs_error": metrics.max_abs_error,
-        "outlier_count": metrics.outlier_count,
-    }
-
-
-def build_report_payload(result: EvaluationResult) -> dict[str, object]:
-    return {
-        "samples": result.samples,
-        "model": _serialize_metrics(result.model),
-        "baseline": _serialize_metrics(result.baseline),
-        "delta_mse": result.baseline.mse - result.model.mse,
-        "mileage_price_correlation": result.mileage_price_correlation,
-    }
 
 
 def _format_r2(value: float | None, defined: bool) -> str:
     return "undefined (constant target values)" if not defined else f"{value:.6f}"
 
 
-def emit_output(payload: dict[str, object], json_output: bool) -> None:
+def _format_optional(value: float | None) -> str:
+    return "undefined" if value is None else f"{value:.6f}"
+
+
+def _print_comparison_section(title: str, comparison: MetricsComparison) -> None:
+    print(title)
+    print(f"MAE          : {comparison.model.mae:.6f}")
+    print(f"MSE          : {comparison.model.mse:.6f}")
+    print(f"RMSE         : {comparison.model.rmse:.6f}")
+    print(f"R2           : {_format_r2(comparison.model.r2, comparison.model.r2_defined)}")
+    print(f"Mean Error   : {comparison.model.mean_error:.6f}")
+    print(f"Error Std    : {comparison.model.error_std:.6f}")
+    print(f"Max Abs Error: {comparison.model.max_abs_error:.6f}")
+    print(f"Outliers     : {comparison.model.outlier_count}")
+    print("Baseline metrics (predict mean(price))")
+    print(f"MAE          : {comparison.baseline.mae:.6f}")
+    print(f"MSE          : {comparison.baseline.mse:.6f}")
+    print(f"RMSE         : {comparison.baseline.rmse:.6f}")
+    print(
+        "R2           : "
+        f"{_format_r2(comparison.baseline.r2, comparison.baseline.r2_defined)}"
+    )
+    print(f"Mean Error   : {comparison.baseline.mean_error:.6f}")
+    print(f"Error Std    : {comparison.baseline.error_std:.6f}")
+    print(f"Max Abs Error: {comparison.baseline.max_abs_error:.6f}")
+    print(f"Outliers     : {comparison.baseline.outlier_count}")
+    print(f"Delta MSE    : {comparison.delta_mse:.6f} (positive means model is better)")
+    print(f"SNR          : {_format_optional(comparison.signal_to_noise_ratio)}")
+    print(f"Usefulness   : {_format_optional(comparison.usefulness_score)}")
+
+
+def emit_output(result: EvaluationResult, json_output: bool) -> None:
     if json_output:
-        print(json.dumps(payload, indent=2))
+        print(json.dumps(dataclasses.asdict(result), indent=2))
         return
 
-    model_metrics = payload["model"]
-    baseline_metrics = payload["baseline"]
-
-    if not isinstance(model_metrics, dict) or not isinstance(baseline_metrics, dict):
-        raise ValueError("Invalid report payload shape.")
-
-    print(f"Samples      : {payload['samples']}")
-    print("Model metrics")
-    print(f"MAE          : {float(model_metrics['mae']):.6f}")
-    print(f"MSE          : {float(model_metrics['mse']):.6f}")
-    print(f"RMSE         : {float(model_metrics['rmse']):.6f}")
+    print(f"Samples      : {result.samples}")
     print(
-        "R2           : "
-        f"{_format_r2(model_metrics.get('r2'), bool(model_metrics.get('r2_defined')))}"
+        "Split        : "
+        f"{result.split.train_samples} train / {result.split.test_samples} test "
+        f"(ratio={result.split.test_ratio}, seed={result.split.seed})"
     )
-    print(f"Mean Error   : {float(model_metrics['mean_error']):.6f}")
-    print(f"Error Std    : {float(model_metrics['error_std']):.6f}")
-    print(f"Max Abs Error: {float(model_metrics['max_abs_error']):.6f}")
-    print(f"Outliers     : {int(model_metrics['outlier_count'])}")
-    print("Baseline metrics (predict mean(price))")
-    print(f"MAE          : {float(baseline_metrics['mae']):.6f}")
-    print(f"MSE          : {float(baseline_metrics['mse']):.6f}")
-    print(f"RMSE         : {float(baseline_metrics['rmse']):.6f}")
-    print(
-        "R2           : "
-        f"{_format_r2(baseline_metrics.get('r2'), bool(baseline_metrics.get('r2_defined')))}"
-    )
-    print(f"Mean Error   : {float(baseline_metrics['mean_error']):.6f}")
-    print(f"Error Std    : {float(baseline_metrics['error_std']):.6f}")
-    print(f"Max Abs Error: {float(baseline_metrics['max_abs_error']):.6f}")
-    print(f"Outliers     : {int(baseline_metrics['outlier_count'])}")
-    print(
-        f"Delta MSE    : {float(payload['delta_mse']):.6f} "
-        "(positive means model is better)"
-    )
-    correlation_value = payload.get("mileage_price_correlation")
-    if correlation_value is None:
+    _print_comparison_section("Full dataset metrics", result.full)
+    _print_comparison_section("Train split metrics", result.train)
+    _print_comparison_section("Test split metrics", result.test)
+    if result.mileage_price_correlation is None:
         print("Correlation  : undefined")
     else:
-        print(f"Correlation  : {float(correlation_value):.6f}")
+        print(f"Correlation  : {result.mileage_price_correlation:.6f}")
 
 
-def save_report(path: Path, payload: dict[str, object]) -> None:
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+def save_report(path: Path, result: EvaluationResult) -> None:
+    path.write_text(json.dumps(dataclasses.asdict(result), indent=2), encoding="utf-8")
 
 
 def parse_args() -> EvaluateArgs:
@@ -330,9 +405,18 @@ def parse_args() -> EvaluateArgs:
     parser.add_argument("--dataset", default="data.csv", help="Dataset CSV (default: data.csv)")
     parser.add_argument("--model", default="model.json", help="Model JSON (default: model.json)")
     parser.add_argument("--json", action="store_true", dest="json_output", help="Output metrics as JSON.")
+    parser.add_argument("--report", help="Optional path to save evaluation report JSON.")
     parser.add_argument(
-        "--report",
-        help="Optional path to save evaluation report JSON.",
+        "--test-ratio",
+        type=float,
+        default=0.2,
+        help="Test split ratio in (0, 1) (default: 0.2)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed used for train/test split (default: 42)",
     )
     ns = parser.parse_args()
     return EvaluateArgs(
@@ -340,6 +424,8 @@ def parse_args() -> EvaluateArgs:
         model_path=Path(ns.model),
         json_output=ns.json_output,
         report_path=Path(ns.report) if ns.report else None,
+        test_ratio=ns.test_ratio,
+        seed=ns.seed,
     )
 
 
@@ -350,28 +436,43 @@ def main() -> None:
     try:
         mileages, prices = load_dataset(args.dataset_path)
         model, _ = load_model(args.model_path, model_policy=ModelPolicy.STRICT, logger=logger)
-        result = evaluate(mileages, prices, model)
+        result = evaluate(
+            mileages,
+            prices,
+            model,
+            test_ratio=args.test_ratio,
+            seed=args.seed,
+        )
     except (ValueError, FileNotFoundError, OSError) as exc:
         logger.error("Error: %s", exc)
         raise SystemExit(1)
 
-    if not result.model.r2_defined:
-        logger.warning("Warning: model R2 is undefined because all target values are constant.")
-    if not result.baseline.r2_defined:
-        logger.warning("Warning: baseline R2 is undefined because all target values are constant.")
-    if result.model.mse > result.baseline.mse:
-        logger.warning("Warning: model MSE is worse than baseline MSE.")
-
-    payload = build_report_payload(result)
+    for scope_name, comparison in (
+        ("full", result.full),
+        ("train", result.train),
+        ("test", result.test),
+    ):
+        if not comparison.model.r2_defined:
+            logger.warning(
+                "Warning: %s model R2 is undefined because target values are constant.",
+                scope_name,
+            )
+        if not comparison.baseline.r2_defined:
+            logger.warning(
+                "Warning: %s baseline R2 is undefined because target values are constant.",
+                scope_name,
+            )
+        if comparison.model.mse > comparison.baseline.mse:
+            logger.warning("Warning: %s model MSE is worse than baseline MSE.", scope_name)
 
     if args.report_path is not None:
         try:
-            save_report(args.report_path, payload)
+            save_report(args.report_path, result)
         except OSError as exc:
             logger.error("Error: cannot save report to %s (%s)", args.report_path, exc)
             raise SystemExit(1)
 
-    emit_output(payload, json_output=args.json_output)
+    emit_output(result, json_output=args.json_output)
 
 
 if __name__ == "__main__":
