@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 import csv
-import dataclasses
 import json
 import logging
 import math
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from predictor.engine import load_model, predict
@@ -20,7 +20,7 @@ EPSILON = 1e-12
 OUTLIER_Z_THRESHOLD = 3.0
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(frozen=True)
 class RegressionMetrics:
     mae: float
     mse: float
@@ -33,7 +33,7 @@ class RegressionMetrics:
     outlier_count: int
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(frozen=True)
 class MetricsComparison:
     model: RegressionMetrics
     baseline: RegressionMetrics
@@ -42,7 +42,7 @@ class MetricsComparison:
     usefulness_score: float | None
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(frozen=True)
 class SplitInfo:
     test_ratio: float
     seed: int
@@ -50,7 +50,7 @@ class SplitInfo:
     test_samples: int
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(frozen=True)
 class EvaluationResult:
     samples: int
     full: MetricsComparison
@@ -60,7 +60,7 @@ class EvaluationResult:
     mileage_price_correlation: float | None
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(frozen=True)
 class EvaluateArgs:
     dataset_path: Path
     model_path: Path
@@ -70,7 +70,7 @@ class EvaluateArgs:
     seed: int
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(frozen=True)
 class ErrorStats:
     residuals: tuple[float, ...]
     abs_error_sum: float
@@ -94,6 +94,12 @@ def mean(values: list[float]) -> float:
     if not values:
         raise ValueError("Empty dataset: cannot compute mean.")
     return sum(values) / len(values)
+
+
+def _validate_finite_series(name: str, values: list[float]) -> None:
+    for index, value in enumerate(values):
+        if not math.isfinite(value):
+            raise ValueError(f"Non-finite {name} at index {index}.")
 
 
 def _parse_finite_float(raw_value: str, field: str, line_no: int) -> float:
@@ -149,13 +155,8 @@ def validate_dataset(mileages: list[float], prices: list[float]) -> None:
         raise ValueError("Empty dataset.")
     if len(mileages) != len(prices):
         raise ValueError("Mismatched dataset sizes.")
-
-    for index, value in enumerate(mileages):
-        if not math.isfinite(value):
-            raise ValueError(f"Non-finite mileage at index {index}.")
-    for index, value in enumerate(prices):
-        if not math.isfinite(value):
-            raise ValueError(f"Non-finite price at index {index}.")
+    _validate_finite_series("mileage", mileages)
+    _validate_finite_series("price", prices)
 
     mileage_span = max(mileages) - min(mileages)
     if mileage_span < EPSILON:
@@ -349,55 +350,66 @@ def _format_optional(value: float | None) -> str:
     return "undefined" if value is None else f"{value:.6f}"
 
 
-def _print_comparison_section(title: str, comparison: MetricsComparison) -> None:
-    print(title)
-    print(f"MAE          : {comparison.model.mae:.6f}")
-    print(f"MSE          : {comparison.model.mse:.6f}")
-    print(f"RMSE         : {comparison.model.rmse:.6f}")
-    print(f"R2           : {_format_r2(comparison.model.r2, comparison.model.r2_defined)}")
-    print(f"Mean Error   : {comparison.model.mean_error:.6f}")
-    print(f"Error Std    : {comparison.model.error_std:.6f}")
-    print(f"Max Abs Error: {comparison.model.max_abs_error:.6f}")
-    print(f"Outliers     : {comparison.model.outlier_count}")
-    print("Baseline metrics (predict mean(price))")
-    print(f"MAE          : {comparison.baseline.mae:.6f}")
-    print(f"MSE          : {comparison.baseline.mse:.6f}")
-    print(f"RMSE         : {comparison.baseline.rmse:.6f}")
-    print(
-        "R2           : "
-        f"{_format_r2(comparison.baseline.r2, comparison.baseline.r2_defined)}"
-    )
-    print(f"Mean Error   : {comparison.baseline.mean_error:.6f}")
-    print(f"Error Std    : {comparison.baseline.error_std:.6f}")
-    print(f"Max Abs Error: {comparison.baseline.max_abs_error:.6f}")
-    print(f"Outliers     : {comparison.baseline.outlier_count}")
-    print(f"Delta MSE    : {comparison.delta_mse:.6f} (positive means model is better)")
-    print(f"SNR          : {_format_optional(comparison.signal_to_noise_ratio)}")
-    print(f"Usefulness   : {_format_optional(comparison.usefulness_score)}")
+def serialize_result(result: EvaluationResult) -> dict[str, object]:
+    return asdict(result)
+
+
+def render_text_output(result: EvaluationResult) -> str:
+    lines: list[str] = [
+        f"Samples      : {result.samples}",
+        (
+            "Split        : "
+            f"{result.split.train_samples} train / {result.split.test_samples} test "
+            f"(ratio={result.split.test_ratio}, seed={result.split.seed})"
+        ),
+    ]
+
+    def append_comparison(title: str, comparison: MetricsComparison) -> None:
+        lines.append(title)
+        lines.append(f"MAE          : {comparison.model.mae:.6f}")
+        lines.append(f"MSE          : {comparison.model.mse:.6f}")
+        lines.append(f"RMSE         : {comparison.model.rmse:.6f}")
+        lines.append(f"R2           : {_format_r2(comparison.model.r2, comparison.model.r2_defined)}")
+        lines.append(f"Mean Error   : {comparison.model.mean_error:.6f}")
+        lines.append(f"Error Std    : {comparison.model.error_std:.6f}")
+        lines.append(f"Max Abs Error: {comparison.model.max_abs_error:.6f}")
+        lines.append(f"Outliers     : {comparison.model.outlier_count}")
+        lines.append("Baseline metrics (predict mean(price))")
+        lines.append(f"MAE          : {comparison.baseline.mae:.6f}")
+        lines.append(f"MSE          : {comparison.baseline.mse:.6f}")
+        lines.append(f"RMSE         : {comparison.baseline.rmse:.6f}")
+        lines.append(
+            "R2           : "
+            f"{_format_r2(comparison.baseline.r2, comparison.baseline.r2_defined)}"
+        )
+        lines.append(f"Mean Error   : {comparison.baseline.mean_error:.6f}")
+        lines.append(f"Error Std    : {comparison.baseline.error_std:.6f}")
+        lines.append(f"Max Abs Error: {comparison.baseline.max_abs_error:.6f}")
+        lines.append(f"Outliers     : {comparison.baseline.outlier_count}")
+        lines.append(f"Delta MSE    : {comparison.delta_mse:.6f} (positive means model is better)")
+        lines.append(f"SNR          : {_format_optional(comparison.signal_to_noise_ratio)}")
+        lines.append(f"Usefulness   : {_format_optional(comparison.usefulness_score)}")
+
+    append_comparison("Full dataset metrics", result.full)
+    append_comparison("Train split metrics", result.train)
+    append_comparison("Test split metrics", result.test)
+    if result.mileage_price_correlation is None:
+        lines.append("Correlation  : undefined")
+    else:
+        lines.append(f"Correlation  : {result.mileage_price_correlation:.6f}")
+
+    return "\n".join(lines)
 
 
 def emit_output(result: EvaluationResult, json_output: bool) -> None:
     if json_output:
-        print(json.dumps(dataclasses.asdict(result), indent=2))
+        print(json.dumps(serialize_result(result), indent=2))
         return
-
-    print(f"Samples      : {result.samples}")
-    print(
-        "Split        : "
-        f"{result.split.train_samples} train / {result.split.test_samples} test "
-        f"(ratio={result.split.test_ratio}, seed={result.split.seed})"
-    )
-    _print_comparison_section("Full dataset metrics", result.full)
-    _print_comparison_section("Train split metrics", result.train)
-    _print_comparison_section("Test split metrics", result.test)
-    if result.mileage_price_correlation is None:
-        print("Correlation  : undefined")
-    else:
-        print(f"Correlation  : {result.mileage_price_correlation:.6f}")
+    print(render_text_output(result))
 
 
 def save_report(path: Path, result: EvaluationResult) -> None:
-    path.write_text(json.dumps(dataclasses.asdict(result), indent=2), encoding="utf-8")
+    path.write_text(json.dumps(serialize_result(result), indent=2), encoding="utf-8")
 
 
 def parse_args() -> EvaluateArgs:
@@ -419,6 +431,8 @@ def parse_args() -> EvaluateArgs:
         help="Random seed used for train/test split (default: 42)",
     )
     ns = parser.parse_args()
+    if not 0.0 < ns.test_ratio < 1.0:
+        parser.error("--test-ratio must be in the interval (0, 1).")
     return EvaluateArgs(
         dataset_path=Path(ns.dataset),
         model_path=Path(ns.model),
@@ -427,6 +441,21 @@ def parse_args() -> EvaluateArgs:
         test_ratio=ns.test_ratio,
         seed=ns.seed,
     )
+
+
+def log_comparison_warnings(logger: logging.Logger, scope_name: str, comparison: MetricsComparison) -> None:
+    if not comparison.model.r2_defined:
+        logger.warning(
+            "Warning: %s model R2 is undefined because target values are constant.",
+            scope_name,
+        )
+    if not comparison.baseline.r2_defined:
+        logger.warning(
+            "Warning: %s baseline R2 is undefined because target values are constant.",
+            scope_name,
+        )
+    if comparison.model.mse > comparison.baseline.mse:
+        logger.warning("Warning: %s model MSE is worse than baseline MSE.", scope_name)
 
 
 def main() -> None:
@@ -447,23 +476,8 @@ def main() -> None:
         logger.error("Error: %s", exc)
         raise SystemExit(1)
 
-    for scope_name, comparison in (
-        ("full", result.full),
-        ("train", result.train),
-        ("test", result.test),
-    ):
-        if not comparison.model.r2_defined:
-            logger.warning(
-                "Warning: %s model R2 is undefined because target values are constant.",
-                scope_name,
-            )
-        if not comparison.baseline.r2_defined:
-            logger.warning(
-                "Warning: %s baseline R2 is undefined because target values are constant.",
-                scope_name,
-            )
-        if comparison.model.mse > comparison.baseline.mse:
-            logger.warning("Warning: %s model MSE is worse than baseline MSE.", scope_name)
+    for scope_name, comparison in (("full", result.full), ("train", result.train), ("test", result.test)):
+        log_comparison_warnings(logger, scope_name, comparison)
 
     if args.report_path is not None:
         try:
