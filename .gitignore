@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Local generated artifacts
+model.json
+evaluation_report.json
+regression_plot*.png
+regression_plot*.svg
+regression_plot*.pdf
+
+# Plot reports
+report_make/
+report/
+report_artifacts/metrics.json
+report_artifacts/summary.txt
+report_artifacts/regression_plot*.png
+report_artifacts/regression_plot*.svg
+report_artifacts/regression_plot*.pdf
+
+# OS/editor noise
+.DS_Store
