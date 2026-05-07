@@ -28,6 +28,7 @@ PREDICT_JSON ?= 1
 
 EVAL_JSON ?= 1
 EVAL_REPORT ?= evaluation_report.json
+INTERPRET_REPORT ?= interpretation_report.txt
 
 PLOT_OUTPUT ?= regression_plot
 PLOT_FORMAT ?= png
@@ -66,9 +67,10 @@ else
 PLOT_SHOW_FLAG :=
 endif
 PLOT_CMD = $(PYTHON) plot.py --dataset $(DATASET) --model $(MODEL) --output $(PLOT_OUTPUT) --format $(PLOT_FORMAT) --theme $(PLOT_THEME) --x-axis $(PLOT_X_AXIS) --dpi $(PLOT_DPI) --report-dir $(PLOT_REPORT_DIR) $(PLOT_SHOW_FLAG)
+INTERPRET_CMD = $(PYTHON) interpret.py --report $(EVAL_REPORT) --output $(INTERPRET_REPORT)
 
 TEST_CMD = $(PYTHON) -m unittest discover -s tests -p 'test_*.py' -q
-LINT_CMD = $(PYTHON) -m py_compile train.py predict.py evaluate.py plot.py trainer/*.py predictor/*.py evaluator/*.py plotter/*.py tests/*.py
+LINT_CMD = $(PYTHON) -m py_compile train.py predict.py evaluate.py plot.py interpret.py trainer/*.py predictor/*.py evaluator/*.py plotter/*.py interpreter/*.py tests/*.py
 
 
 define run
@@ -81,7 +83,7 @@ define title
 	@printf "\n$(C_BOLD)$(C_BLUE)==> %s$(C_RESET)\n" "$(1)"
 endef
 
-.PHONY: help venv deps doctor lint test train predict evaluate plot artifacts makeup all clean fclean re
+.PHONY: help venv deps doctor lint test train predict evaluate interpret plot artifacts makeup all clean fclean re
 
 all: makeup
 
@@ -96,13 +98,14 @@ help:
 	@printf "  $(C_GREEN)train$(C_RESET)     Train model and save $(MODEL)\n"
 	@printf "  $(C_GREEN)predict$(C_RESET)   Predict a price for MILEAGE=$(MILEAGE)\n"
 	@printf "  $(C_GREEN)evaluate$(C_RESET)  Evaluate model + save $(EVAL_REPORT)\n"
+	@printf "  $(C_GREEN)interpret$(C_RESET) Interpret evaluation report into $(INTERPRET_REPORT)\n"
 	@printf "  $(C_GREEN)plot$(C_RESET)      Render regression diagnostics plot\n"
 	@printf "  $(C_GREEN)artifacts$(C_RESET) Run train + evaluate + plot\n"
 	@printf "  $(C_GREEN)makeup$(C_RESET)    Full pipeline: doctor, lint, test, artifacts, predict\n"
 	@printf "  $(C_GREEN)clean$(C_RESET)     Remove Python cache files\n"
 	@printf "  $(C_GREEN)fclean$(C_RESET)    clean + generated artifacts\n"
 	@printf "  $(C_GREEN)re$(C_RESET)        fclean then makeup\n"
-	@printf "\n$(C_BOLD)Common variables$(C_RESET): DATASET MODEL LEARNING_RATE ITERATIONS TEST_RATIO SEED MILEAGE PLOT_FORMAT PLOT_THEME PLOT_SHOW VENV_DIR PIP_PACKAGES\n"
+	@printf "\n$(C_BOLD)Common variables$(C_RESET): DATASET MODEL LEARNING_RATE ITERATIONS TEST_RATIO SEED MILEAGE PLOT_FORMAT PLOT_THEME PLOT_SHOW VENV_DIR PIP_PACKAGES INTERPRET_REPORT\n"
 	@printf "Example: make makeup ITERATIONS=2000 MILEAGE=85000 PLOT_THEME=dark\n"
 
 $(VENV_PYTHON):
@@ -152,13 +155,17 @@ evaluate: venv
 	$(call title,Evaluate model)
 	$(call run,$(EVAL_CMD))
 
+interpret: venv
+	$(call title,Interpret evaluation report)
+	$(call run,$(INTERPRET_CMD))
+
 plot: deps
 	$(call title,Render diagnostics plot)
 	$(call run,$(PLOT_CMD))
 
-artifacts: train evaluate plot
+artifacts: train evaluate interpret plot
 	$(call title,Artifacts ready)
-	@printf "$(C_GREEN)Generated:$(C_RESET) %s, %s, %s.%s\n" "$(MODEL)" "$(EVAL_REPORT)" "$(PLOT_OUTPUT)" "$(PLOT_FORMAT)"
+	@printf "$(C_GREEN)Generated:$(C_RESET) %s, %s, %s, %s.%s\n" "$(MODEL)" "$(EVAL_REPORT)" "$(INTERPRET_REPORT)" "$(PLOT_OUTPUT)" "$(PLOT_FORMAT)"
 
 makeup:
 	$(call title,ML pipeline started)
@@ -184,7 +191,7 @@ clean:
 
 fclean: clean
 	$(call title,Clean generated artifacts)
-	$(call run,rm -f $(MODEL) $(EVAL_REPORT))
+	$(call run,rm -f $(MODEL) $(EVAL_REPORT) $(INTERPRET_REPORT))
 	$(call run,rm -f regression_plot.png regression_plot.svg regression_plot.pdf)
 	$(call run,rm -f $(PLOT_OUTPUT).png $(PLOT_OUTPUT).svg $(PLOT_OUTPUT).pdf)
 	$(call run,rm -rf $(PLOT_REPORT_DIR) report)

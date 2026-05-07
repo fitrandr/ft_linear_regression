@@ -8,6 +8,7 @@ __pycache__/
 # Local generated artifacts
 model.json
 evaluation_report.json
+interpretation_report.txt
 regression_plot*.png
 regression_plot*.svg
 regression_plot*.pdf
