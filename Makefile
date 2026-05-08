@@ -37,6 +37,12 @@ PLOT_X_AXIS ?= raw
 PLOT_DPI ?= 150
 PLOT_REPORT_DIR ?= report_artifacts
 PLOT_SHOW ?= 0
+PLOT_TEST_RATIO ?= 0.2
+PLOT_SEED ?= 42
+PLOT_GENERATE_REPORT_IMAGES ?= 1
+PLOT_ANIMATE ?= 0
+PLOT_ANIMATION_ITERATIONS ?= 120
+PLOT_ANIMATION_FPS ?= 8
 
 C_RESET := \033[0m
 C_BOLD := \033[1m
@@ -66,7 +72,17 @@ PLOT_SHOW_FLAG := --show
 else
 PLOT_SHOW_FLAG :=
 endif
-PLOT_CMD = $(PYTHON) plot.py --dataset $(DATASET) --model $(MODEL) --output $(PLOT_OUTPUT) --format $(PLOT_FORMAT) --theme $(PLOT_THEME) --x-axis $(PLOT_X_AXIS) --dpi $(PLOT_DPI) --report-dir $(PLOT_REPORT_DIR) $(PLOT_SHOW_FLAG)
+ifeq ($(PLOT_GENERATE_REPORT_IMAGES),1)
+PLOT_REPORT_IMAGES_FLAG := --generate-report-images
+else
+PLOT_REPORT_IMAGES_FLAG :=
+endif
+ifeq ($(PLOT_ANIMATE),1)
+PLOT_ANIMATE_FLAG := --animate-training --animation-iterations $(PLOT_ANIMATION_ITERATIONS) --animation-fps $(PLOT_ANIMATION_FPS)
+else
+PLOT_ANIMATE_FLAG :=
+endif
+PLOT_CMD = $(PYTHON) plot.py --dataset $(DATASET) --model $(MODEL) --output $(PLOT_OUTPUT) --format $(PLOT_FORMAT) --theme $(PLOT_THEME) --x-axis $(PLOT_X_AXIS) --dpi $(PLOT_DPI) --report-dir $(PLOT_REPORT_DIR) --test-ratio $(PLOT_TEST_RATIO) --seed $(PLOT_SEED) $(PLOT_REPORT_IMAGES_FLAG) $(PLOT_ANIMATE_FLAG) $(PLOT_SHOW_FLAG)
 INTERPRET_CMD = $(PYTHON) interpret.py --report $(EVAL_REPORT) --output $(INTERPRET_REPORT)
 
 TEST_CMD = $(PYTHON) -m unittest discover -s tests -p 'test_*.py' -q
@@ -105,8 +121,8 @@ help:
 	@printf "  $(C_GREEN)clean$(C_RESET)     Remove Python cache files\n"
 	@printf "  $(C_GREEN)fclean$(C_RESET)    clean + generated artifacts\n"
 	@printf "  $(C_GREEN)re$(C_RESET)        fclean then makeup\n"
-	@printf "\n$(C_BOLD)Common variables$(C_RESET): DATASET MODEL LEARNING_RATE ITERATIONS TEST_RATIO SEED MILEAGE PLOT_FORMAT PLOT_THEME PLOT_SHOW VENV_DIR PIP_PACKAGES INTERPRET_REPORT\n"
-	@printf "Example: make makeup ITERATIONS=2000 MILEAGE=85000 PLOT_THEME=dark\n"
+	@printf "\n$(C_BOLD)Common variables$(C_RESET): DATASET MODEL LEARNING_RATE ITERATIONS TEST_RATIO SEED MILEAGE PLOT_FORMAT PLOT_THEME PLOT_SHOW PLOT_GENERATE_REPORT_IMAGES PLOT_ANIMATE PLOT_ANIMATION_ITERATIONS PLOT_ANIMATION_FPS VENV_DIR PIP_PACKAGES INTERPRET_REPORT\n"
+	@printf "Example: make makeup ITERATIONS=2000 MILEAGE=85000 PLOT_THEME=dark PLOT_ANIMATE=1\n"
 
 $(VENV_PYTHON):
 	$(call title,Create virtual environment)
@@ -194,6 +210,7 @@ fclean: clean
 	$(call run,rm -f $(MODEL) $(EVAL_REPORT) $(INTERPRET_REPORT))
 	$(call run,rm -f regression_plot.png regression_plot.svg regression_plot.pdf)
 	$(call run,rm -f $(PLOT_OUTPUT).png $(PLOT_OUTPUT).svg $(PLOT_OUTPUT).pdf)
+	$(call run,rm -f $(PLOT_OUTPUT)_training.gif)
 	@printf "$(C_CYAN)[cmd]$(C_RESET) %s\n" "find $(PLOT_REPORT_DIR) -mindepth 1 ! -name README.md -exec rm -rf {} +"
 	@if [[ -d "$(PLOT_REPORT_DIR)" ]]; then find "$(PLOT_REPORT_DIR)" -mindepth 1 ! -name README.md -exec rm -rf {} +; fi
 	$(call run,rm -rf report)

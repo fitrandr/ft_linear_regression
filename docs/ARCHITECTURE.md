@@ -18,7 +18,8 @@ flowchart LR
         TR[trainer]
         PR[predictor]
         EV[evaluator]
-        PL[plotter]
+        PL[plotter cli/data/render]
+        PD[plotter diagnostics/theme/export]
         IN[interpreter]
     end
 
@@ -26,7 +27,9 @@ flowchart LR
         M[model.json]
         R[evaluation_report.json]
         TXT[interpretation_report.txt]
-        IMG[regression_plot.png]
+        IMG[regression_plot_dashboard.png]
+        IMGS[regression+residuals+actual_vs_pred+hist]
+        GIF[training_animation.gif]
         MET[metrics.json/summary.txt]
     end
 
@@ -37,7 +40,10 @@ flowchart LR
     I --> IN --> R
     IN --> TXT
     G --> PL --> M
+    PL --> PD
     PL --> IMG
+    PL --> IMGS
+    PD --> GIF
     PL --> MET
 ```
 
@@ -46,7 +52,7 @@ flowchart LR
 1. `trainer` loads dataset, validates values, splits train/test, trains model, and writes payload.
 2. `predictor` loads/validates model payload and predicts in safe bounded mode.
 3. `evaluator` computes model and baseline metrics on full/train/test scopes.
-4. `plotter` renders regression fit + residual diagnostics and writes metric bundles.
+4. `plotter` renders a 2x2 dashboard (regression, residuals, histogram, actual-vs-predicted), can export per-diagnostic images, and can generate an optional gradient descent animation GIF.
 5. `interpreter` converts evaluation JSON into plain-language conclusions.
 
 ## Key design principles

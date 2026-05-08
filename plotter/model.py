@@ -18,7 +18,13 @@ class PlotArgs:
     show: bool
     theme: str
     x_axis: str
+    test_ratio: float
+    seed: int
     report_dir: Path | None
+    generate_report_images: bool
+    animate_training: bool
+    animation_iterations: int
+    animation_fps: int
     dpi: int
 
 
@@ -28,12 +34,14 @@ class LoadedPlotData:
     prices: list[float]
     model: Model
     predictions: list[float]
+    is_test_flags: list[bool]
 
 
 @dataclass(frozen=True)
 class PlotAnalysis:
     comparison: MetricsComparison
     correlation: float | None
+    quality_label: str
     samples: int
     mileage_min: float
     mileage_max: float

@@ -104,18 +104,37 @@ The project is split into five module groups:
 
 ### `plotter.data`
 
-- `load_plot_data(dataset_path, model_path, logger) -> LoadedPlotData`
+- `load_plot_data(dataset_path, model_path, logger, test_ratio, seed) -> LoadedPlotData`
+
+### `plotter.diagnostics`
+
+- `build_test_flags(sample_count, test_ratio, seed) -> list[bool]`
+- `quality_label(r2, usefulness) -> str`
+- `predict_minus_actual(predictions, prices) -> list[float]`
+- `build_gradient_descent_frames(mileages, prices, iterations, learning_rate=0.1) -> list[AnimationFrame]`
+
+### `plotter.theme`
+
+- `resolve_theme(theme_name) -> PlotTheme`
+- `apply_theme_style(plt, theme) -> None`
+
+### `plotter.export`
+
+- `build_report_image_paths(report_dir, image_format) -> ReportImagePaths`
+- `default_animation_path(output_path) -> Path`
 
 ### `plotter.report`
 
-- `build_analysis(mileages, prices, predictions) -> PlotAnalysis`
-- `metrics_annotation(analysis: PlotAnalysis) -> str`
+- `build_analysis(mileages, prices, predictions, model) -> PlotAnalysis`
+- `metrics_annotation(analysis: PlotAnalysis, model: Model) -> str`
 - `save_report_bundle(report_dir: Path, plot_path: Path, analysis: PlotAnalysis) -> Path`
 
 ### `plotter.render`
 
 - `compute_axis_transform(mileages: list[float], x_axis: str) -> AxisTransform`
-- `render_and_save(mileages, prices, predictions, analysis, output_path, image_format, dpi, show, theme, x_axis) -> None`
+- `render_and_save(mileages, prices, predictions, is_test_flags, model, analysis, output_path, image_format, dpi, show, theme_name, x_axis) -> None`
+- `render_report_images(mileages, prices, predictions, is_test_flags, analysis, theme_name, x_axis, image_paths, dpi) -> None`
+- `render_training_animation(mileages, prices, frames, output_path, dpi, fps, theme_name, is_test_flags) -> None`
 
 ### Core dataclasses (`plotter.model`)
 
@@ -123,6 +142,12 @@ The project is split into five module groups:
 - `LoadedPlotData`
 - `PlotAnalysis`
 - `AxisTransform`
+
+Additional dataclasses:
+
+- `plotter.theme.PlotTheme`
+- `plotter.export.ReportImagePaths`
+- `plotter.diagnostics.AnimationFrame`
 
 ## Interpreter API
 

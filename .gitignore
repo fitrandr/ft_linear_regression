@@ -23,6 +23,19 @@ report_artifacts/summary.txt
 report_artifacts/regression_plot*.png
 report_artifacts/regression_plot*.svg
 report_artifacts/regression_plot*.pdf
+report_artifacts/regression.png
+report_artifacts/regression.svg
+report_artifacts/regression.pdf
+report_artifacts/residuals.png
+report_artifacts/residuals.svg
+report_artifacts/residuals.pdf
+report_artifacts/predicted_vs_actual.png
+report_artifacts/predicted_vs_actual.svg
+report_artifacts/predicted_vs_actual.pdf
+report_artifacts/error_distribution.png
+report_artifacts/error_distribution.svg
+report_artifacts/error_distribution.pdf
+report_artifacts/*training.gif
 
 # OS/editor noise
 .DS_Store

@@ -8,6 +8,8 @@ This directory stores generated outputs produced by the training, evaluation, in
 - `evaluation_report.json`: full evaluation report (full/train/test metrics and baseline comparison)
 - `interpretation_report.txt`: plain-language interpretation of model performance
 - `regression_plot_make.png` (or `.svg` / `.pdf`): regression + residual diagnostics chart
+- `regression.png` / `residuals.png` / `predicted_vs_actual.png` / `error_distribution.png`: per-diagnostic images generated with `--generate-report-images`
+- `regression_plot_make_training.gif`: optional gradient descent animation generated with `--animate-training`
 - `metrics.json`: plot-oriented metrics bundle
 - `summary.txt`: short summary of key metrics
 
@@ -35,6 +37,31 @@ Generate plot in dark SVG mode:
 
 ```bash
 make plot PLOT_THEME=dark PLOT_FORMAT=svg
+```
+
+Generate full diagnostic image set:
+
+```bash
+.venv/bin/python plot.py \
+  --dataset data.csv \
+  --model report_artifacts/model.json \
+  --output report_artifacts/regression_plot_make \
+  --format png \
+  --report-dir report_artifacts \
+  --generate-report-images
+```
+
+Generate animation:
+
+```bash
+.venv/bin/python plot.py \
+  --dataset data.csv \
+  --model report_artifacts/model.json \
+  --output report_artifacts/regression_plot_make \
+  --report-dir report_artifacts \
+  --animate-training \
+  --animation-iterations 120 \
+  --animation-fps 8
 ```
 
 ## Generate artifacts manually

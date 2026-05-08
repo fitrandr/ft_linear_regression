@@ -4,8 +4,10 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from predictor.model import Model
 from evaluator.stats import compare_with_baseline, compute_errors, compute_variance_stats, correlation, mean
 
+from .diagnostics import predict_minus_actual, quality_label
 from .model import PlotAnalysis
 
 
@@ -18,7 +20,12 @@ def resolve_output_path(base_path: Path, image_format: str) -> Path:
     return base_path.with_name(base_path.name + suffix)
 
 
-def build_analysis(mileages: list[float], prices: list[float], predictions: list[float]) -> PlotAnalysis:
+def build_analysis(
+    mileages: list[float],
+    prices: list[float],
+    predictions: list[float],
+    model: Model,
+) -> PlotAnalysis:
     comparison = compare_with_baseline(prices, predictions)
     residual_stats = compute_errors(prices, predictions)
     mean_error, error_std, outlier_count = compute_variance_stats(
@@ -34,8 +41,8 @@ def build_analysis(mileages: list[float], prices: list[float], predictions: list
     else:
         outlier_flags = [False] * len(residual_stats.residuals)
 
-    # Plot convention: residual = actual - predicted.
-    residuals = [actual - predicted for actual, predicted in zip(prices, predictions)]
+    # Plot convention here: residual = prediction - actual.
+    residuals = predict_minus_actual(predictions, prices)
     sample_count = len(prices)
     mean_residual_plot_space = sum(residuals) / sample_count
     residual_variance = sum((value - mean_residual_plot_space) ** 2 for value in residuals) / sample_count
@@ -44,6 +51,10 @@ def build_analysis(mileages: list[float], prices: list[float], predictions: list
     return PlotAnalysis(
         comparison=comparison,
         correlation=correlation(mileages, prices),
+        quality_label=quality_label(
+            comparison.model.r2 if comparison.model.r2_defined else None,
+            comparison.usefulness_score,
+        ),
         samples=sample_count,
         mileage_min=min(mileages),
         mileage_max=max(mileages),
@@ -92,7 +103,7 @@ def _usefulness_label(value: float | None) -> str:
     return "worse than baseline"
 
 
-def metrics_annotation(analysis: PlotAnalysis) -> str:
+def metrics_annotation(analysis: PlotAnalysis, model: Model) -> str:
     r2_value = (
         f"{analysis.comparison.model.r2:.4f}"
         if analysis.comparison.model.r2_defined and analysis.comparison.model.r2 is not None
@@ -122,8 +133,11 @@ def metrics_annotation(analysis: PlotAnalysis) -> str:
             f"SNR: {snr_value}",
             f"Usefulness: {usefulness_text}",
             f"Corr(km,price): {correlation_value} ({_correlation_label(analysis.correlation)})",
-            f"Residual mean (actual-pred): {analysis.mean_residual_plot_space:.2f}",
-            f"Residual std (actual-pred): {analysis.residual_std_plot_space:.2f}",
+            f"Residual mean (pred-actual): {analysis.mean_residual_plot_space:.2f}",
+            f"Residual std (pred-actual): {analysis.residual_std_plot_space:.2f}",
+            f"Slope(theta1): {model.theta1:.6f}",
+            f"Intercept(theta0): {model.theta0:.2f}",
+            f"Model quality: {analysis.quality_label.upper()}",
             f"Outliers: {analysis.outlier_count}",
         ]
     )
@@ -180,10 +194,11 @@ def save_report_bundle(report_dir: Path, plot_path: Path, analysis: PlotAnalysis
                     if analysis.comparison.usefulness_score is not None
                     else "- Usefulness score: undefined"
                 ),
+                f"- Model quality: {analysis.quality_label.upper()}",
                 "",
                 "Residual diagnostics:",
-                f"- Mean residual (actual - pred): {analysis.mean_residual_plot_space:.6f}",
-                f"- Residual std (actual - pred): {analysis.residual_std_plot_space:.6f}",
+                f"- Mean residual (pred - actual): {analysis.mean_residual_plot_space:.6f}",
+                f"- Residual std (pred - actual): {analysis.residual_std_plot_space:.6f}",
                 f"- Outliers (|z| > 3): {analysis.outlier_count}",
                 (
                     f"- Correlation (km, price): {analysis.correlation:.6f} "

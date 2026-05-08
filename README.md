@@ -76,6 +76,14 @@ ft_linear_regression/
 ├── predictor/
 ├── evaluator/
 ├── plotter/
+│   ├── cli.py
+│   ├── data.py
+│   ├── diagnostics.py
+│   ├── export.py
+│   ├── model.py
+│   ├── render.py
+│   ├── report.py
+│   └── theme.py
 ├── interpreter/
 ├── tests/
 ├── docs/
@@ -182,8 +190,21 @@ make test
 .venv/bin/python train.py --dataset data.csv --model report_artifacts/model.json
 .venv/bin/python evaluate.py --dataset data.csv --model report_artifacts/model.json --report report_artifacts/evaluation_report.json
 .venv/bin/python interpret.py --report report_artifacts/evaluation_report.json --output report_artifacts/interpretation_report.txt
-.venv/bin/python plot.py --dataset data.csv --model report_artifacts/model.json --output report_artifacts/regression_plot_make --report-dir report_artifacts
+.venv/bin/python plot.py --dataset data.csv --model report_artifacts/model.json --output report_artifacts/regression_plot_make --report-dir report_artifacts --generate-report-images
 .venv/bin/python predict.py --model report_artifacts/model.json --mileage 100000 --json
+```
+
+Generate optional gradient descent animation:
+
+```bash
+.venv/bin/python plot.py \
+  --dataset data.csv \
+  --model report_artifacts/model.json \
+  --output report_artifacts/regression_plot_make \
+  --report-dir report_artifacts \
+  --animate-training \
+  --animation-iterations 120 \
+  --animation-fps 8
 ```
 
 ## Real `model.json` example
@@ -258,6 +279,29 @@ Light theme:
 Dark theme:
 
 ![Dark plot diagnostics](docs/assets/regression_plot_dark.png)
+
+## Plot diagnostics toolkit
+
+The plotting module now provides a full analytics dashboard and report images:
+
+- 2x2 dashboard with:
+  - regression fit (train/test + outliers)
+  - residual plot
+  - error histogram
+  - actual vs predicted plot
+- Train/test split visualization (`--test-ratio`, `--seed`)
+- Outlier highlighting from residual z-scores
+- Theme support (`--theme light|dark`)
+- Multi-format export (`--format png|svg|pdf`)
+- Optional generation of separate diagnostic images (`--generate-report-images`)
+- Optional gradient descent animation GIF (`--animate-training`)
+
+Generated report images (when `--generate-report-images` is enabled):
+
+- `report_artifacts/regression.<format>`
+- `report_artifacts/residuals.<format>`
+- `report_artifacts/predicted_vs_actual.<format>`
+- `report_artifacts/error_distribution.<format>`
 
 ## Metrics explained
 
