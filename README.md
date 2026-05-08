@@ -1,125 +1,320 @@
 # ft_linear_regression
 
-Introduction a la regression lineaire avec descente de gradient (42).
+A production-style, educational linear regression project implemented in pure Python.
 
-## Objectif du projet
+This repository was built to learn and demonstrate how a complete ML workflow works without NumPy, pandas, or external ML frameworks.
 
-Ce projet implemente un modele simple de Machine Learning pour predire le prix d'une voiture en fonction de son kilometrage.
+## Why this project exists
 
-Hypothese imposee par le sujet :
+Most linear regression tutorials hide details inside libraries. This project does the opposite:
 
-\[
-\hat{y} = \theta_0 + \theta_1 \times x
-\]
+- We implement data loading and validation ourselves
+- We implement gradient descent ourselves
+- We keep model serialization explicit and inspectable
+- We provide CLI tools for training, prediction, evaluation, plotting, and report interpretation
 
-avec :
-- \(x\) : kilometrage (km)
-- \(\hat{y}\) : prix estime
-- \(y\) : prix reel
+The goal is to understand every layer of a small ML system, from raw CSV to human-readable report.
 
-## Ce qui est livre
+## Linear regression explained (simple)
 
-### Partie obligatoire
-
-- `train.py` : entraine le modele avec descente de gradient et sauvegarde `theta0`, `theta1` dans `model.json`.
-- `predict.py` : lit `model.json` et predit le prix pour un kilometrage saisi.
-
-### Partie bonus
-
-- `evaluate.py` : calcule MAE, MSE, RMSE et R2.
-- `plot.py` : affiche/sauvegarde le nuage de points et la droite de regression.
-- `linear_regression_solution.ipynb` : notebook complet avec explications detaillees, formules Markdown/LaTeX et implementation pas a pas.
-
-## Formules d'entrainement
-
-Pour \(m\) exemples :
+We try to predict a car price from mileage using a straight line:
 
 \[
-\theta_0 := \theta_0 - \alpha \cdot \frac{1}{m}\sum_{i=0}^{m-1}(\hat{y}^{(i)} - y^{(i)})
+\hat{y} = \theta_0 + \theta_1 x
 \]
 
-\[
-\theta_1 := \theta_1 - \alpha \cdot \frac{1}{m}\sum_{i=0}^{m-1}(\hat{y}^{(i)} - y^{(i)})x^{(i)}
-\]
+- `x`: mileage (km)
+- `\hat{y}`: predicted price
+- `\theta_0`: intercept
+- `\theta_1`: slope
 
-Mise a jour **simultanee** de `theta0` et `theta1`.
+During training:
 
-## Structure
+- We normalize mileage to improve numerical stability
+- We optimize `theta0` and `theta1` with gradient descent
+- We monitor loss (MSE)
+- We support early stopping to avoid unnecessary iterations
+- We convert normalized parameters back to raw-scale parameters for prediction
 
-- `data.csv` : dataset (km, price)
-- `train.py`
-- `predict.py`
-- `evaluate.py`
-- `plot.py`
-- `linear_regression_solution.ipynb`
-- `model.json` (genere apres entrainement)
+During evaluation:
 
-## Prerequis
+- We compare model errors against a baseline (predicting the mean price)
+- We compute MAE, MSE, RMSE, R2, residual stats, and usefulness indicators
+- We evaluate full dataset and train/test split metrics
 
-- Python 3
-- `matplotlib` uniquement pour les graphes (`plot.py` et certaines cellules du notebook)
+## Project architecture
 
-Installation optionnelle :
+### Entrypoints
+
+- `train.py` -> train model and save `model.json`
+- `predict.py` -> predict one or multiple prices
+- `evaluate.py` -> compute model quality metrics
+- `plot.py` -> generate diagnostic charts and plot metrics
+- `interpret.py` -> write a plain-language interpretation report
+
+Each entrypoint delegates business logic to a package:
+
+- `trainer/`
+- `predictor/`
+- `evaluator/`
+- `plotter/`
+- `interpreter/`
+
+### Package responsibilities
+
+- `trainer`: dataset split, gradient descent, model payload generation
+- `predictor`: model loading/validation/versioning, mileage parsing, prediction safety checks
+- `evaluator`: metrics, baseline comparison, split-aware evaluation, report serialization
+- `plotter`: regression line visualization, residual diagnostics, export bundle (`metrics.json`, `summary.txt`)
+- `interpreter`: converts JSON evaluation metrics into easy-to-read text for non-technical audiences
+
+### Test suite
+
+- `tests/test_trainer.py`
+- `tests/test_predictor.py`
+- `tests/test_plotter.py`
+- `tests/test_interpreter.py`
+
+## Python environment and `.venv/bin/python`
+
+This project is designed to run inside a local virtual environment.
+
+### Option A: activate the virtual environment
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install matplotlib
 ```
 
-## Utilisation
-
-### 1) Entrainer le modele
+Then run commands with `python`:
 
 ```bash
-python3 train.py
+python train.py
+python predict.py --mileage 90000
 ```
 
-Options utiles :
+### Option B: do not activate, call `.venv/bin/python` directly
+
+This is explicit and very reliable in scripts/CI:
 
 ```bash
-python3 train.py --dataset data.csv --model model.json --learning-rate 0.1 --iterations 10000
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/pip install matplotlib
 ```
 
-### 2) Predire un prix
-
-Mode interactif :
+Run every command with:
 
 ```bash
-python3 predict.py
+.venv/bin/python train.py
+.venv/bin/python predict.py --mileage 90000
+.venv/bin/python evaluate.py --report report_artifacts/evaluation_report.json
 ```
 
-Mode direct :
+Quick check of the interpreter actually used:
 
 ```bash
-python3 predict.py --mileage 100000
+which python
+python --version
+.venv/bin/python --version
 ```
 
-### 3) Evaluer la precision (bonus)
+## Quick workflow with Makefile (recommended)
+
+1. List available targets and variables:
 
 ```bash
-python3 evaluate.py
+make help
 ```
 
-### 4) Tracer la regression (bonus)
+2. Create venv and install dependencies:
 
 ```bash
-python3 plot.py
+make deps
 ```
 
-Genere `regression_plot.png`.
+3. Run the full workflow:
 
-## Notebook detaille
+```bash
+make makeup
+```
 
-Le fichier `linear_regression_solution.ipynb` contient :
+`make makeup` executes environment checks, lint, tests, training, evaluation, interpretation, plotting, and prediction.
 
-1. Analyse du sujet.
-2. Explications mathematiques detaillees.
-3. Chargement et visualisation des donnees.
-4. Entrainement par descente de gradient.
-5. Conversion des thetas vers l'echelle reelle.
-6. Evaluation (MAE, MSE, RMSE, R2).
-7. Sauvegarde du modele et exemple de prediction.
+### Common individual targets
 
-## Notes
+```bash
+make train
+make predict MILEAGE=85000
+make evaluate
+make interpret
+make plot
+make test
+```
 
-- Aucun outil de regression automatique (`numpy.polyfit`, `sklearn`, etc.) n'est utilise pour respecter le sujet.
-- Si `model.json` n'existe pas, `predict.py` utilise \(\theta_0 = 0\) et \(\theta_1 = 0\), conformement a l'etat initial demande.
+### Useful parameter overrides
+
+```bash
+make train ITERATIONS=5000 LEARNING_RATE=0.05 TEST_RATIO=0.25
+make plot PLOT_THEME=dark PLOT_FORMAT=svg
+make evaluate EVAL_JSON=1 EVAL_REPORT=report_artifacts/evaluation_report.json
+```
+
+## Manual workflow without Makefile
+
+Use these commands when you want full control.
+
+1. Train:
+
+```bash
+.venv/bin/python train.py \
+  --dataset data.csv \
+  --model report_artifacts/model.json \
+  --learning-rate 0.1 \
+  --iterations 10000 \
+  --test-ratio 0.2 \
+  --seed 42 \
+  --log-every 1000 \
+  --early-stopping-patience 300 \
+  --early-stopping-min-delta 1e-6
+```
+
+2. Predict:
+
+```bash
+.venv/bin/python predict.py --model report_artifacts/model.json --mileage 100000
+.venv/bin/python predict.py --model report_artifacts/model.json --mileages 50000 80000 120000 --json
+```
+
+3. Evaluate:
+
+```bash
+.venv/bin/python evaluate.py \
+  --dataset data.csv \
+  --model report_artifacts/model.json \
+  --test-ratio 0.2 \
+  --seed 42 \
+  --report report_artifacts/evaluation_report.json
+```
+
+4. Interpret evaluation report:
+
+```bash
+.venv/bin/python interpret.py \
+  --report report_artifacts/evaluation_report.json \
+  --output report_artifacts/interpretation_report.txt \
+  --print
+```
+
+5. Generate diagnostic plot and report bundle:
+
+```bash
+.venv/bin/python plot.py \
+  --dataset data.csv \
+  --model report_artifacts/model.json \
+  --output report_artifacts/regression_plot_make \
+  --format png \
+  --theme light \
+  --report-dir report_artifacts
+```
+
+## Running tests
+
+### All tests
+
+```bash
+make test
+```
+
+or:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -q
+```
+
+### Run tests by file
+
+```bash
+.venv/bin/python -m unittest tests.test_trainer -q
+.venv/bin/python -m unittest tests.test_predictor -q
+.venv/bin/python -m unittest tests.test_plotter -q
+.venv/bin/python -m unittest tests.test_interpreter -q
+```
+
+## Generated artifacts
+
+Outputs are centralized in `report_artifacts/`:
+
+- `model.json`
+- `evaluation_report.json`
+- `interpretation_report.txt`
+- `regression_plot_make.png` (or `.svg` / `.pdf`)
+- `metrics.json`
+- `summary.txt`
+
+See `report_artifacts/README.md` for artifact details.
+
+## Reusing this project as a developer
+
+You can use this repository as a reusable mini-ML framework for small tabular regression tasks.
+
+### Reuse pattern 1: keep CLI, replace dataset
+
+- Keep module code unchanged
+- Prepare a new `km,price` CSV file
+- Run train/evaluate/plot/interpret with your new file paths
+
+### Reuse pattern 2: call modules directly from Python
+
+Example prediction integration:
+
+```python
+from pathlib import Path
+import logging
+from predictor.engine import load_model, predict
+from predictor.model import ModelPolicy
+
+logger = logging.getLogger("predict_integration")
+model, _ = load_model(Path("report_artifacts/model.json"), ModelPolicy.STRICT, logger)
+prices = predict(model, [45000.0, 90000.0, 135000.0])
+print(prices)
+```
+
+Example evaluation integration:
+
+```python
+from pathlib import Path
+import logging
+from predictor.engine import load_model
+from predictor.model import ModelPolicy
+from evaluator.data import load_dataset
+from evaluator.pipeline import evaluate
+
+logger = logging.getLogger("eval_integration")
+mileages, prices = load_dataset(Path("data.csv"))
+model, _ = load_model(Path("report_artifacts/model.json"), ModelPolicy.STRICT, logger)
+result = evaluate(mileages, prices, model, test_ratio=0.2, seed=42)
+print(result.test.model.rmse)
+```
+
+### Reuse pattern 3: extend modules
+
+Common extensions developers add:
+
+- New features beyond mileage (multivariate regression)
+- Better model persistence schema versions
+- Additional metrics and dashboards
+- CI jobs that run `make test` and `make makeup`
+
+## Current limitations
+
+- Single-feature linear regression only
+- No regularization (L1/L2)
+- No external optimized math libraries (by design)
+- Educational scale, not optimized for very large datasets
+
+## License
+
+See `LICENSE`.

@@ -34,10 +34,17 @@ class LoadedPlotData:
 class PlotAnalysis:
     comparison: MetricsComparison
     correlation: float | None
+    samples: int
+    mileage_min: float
+    mileage_max: float
+    price_min: float
+    price_max: float
     residuals: list[float]
     outlier_flags: list[bool]
     mean_error_model_space: float
     error_std_model_space: float
+    mean_residual_plot_space: float
+    residual_std_plot_space: float
     outlier_count: int
     baseline_value: float
 

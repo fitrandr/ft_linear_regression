@@ -71,6 +71,50 @@ def _annotate_metrics(ax, analysis: PlotAnalysis, theme: str) -> None:
     )
 
 
+def _annotate_residuals(ax, analysis: PlotAnalysis, theme: str) -> None:
+    text_color = "white" if theme == "dark" else "black"
+    box_color = "#111827" if theme == "dark" else "#f8fafc"
+    threshold = 3.0 * analysis.residual_std_plot_space
+    text = "\n".join(
+        [
+            f"Residual mean: {analysis.mean_residual_plot_space:.2f}",
+            f"Residual std: {analysis.residual_std_plot_space:.2f}",
+            f"Outlier threshold (|z|>3): {threshold:.2f}",
+        ]
+    )
+    ax.text(
+        0.02,
+        0.98,
+        text,
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        fontsize=8.5,
+        color=text_color,
+        bbox={
+            "boxstyle": "round,pad=0.35",
+            "facecolor": box_color,
+            "alpha": 0.75,
+            "edgecolor": "#9ca3af",
+        },
+    )
+
+
+def _annotate_top_residuals(ax, x_values: list[float], residuals: list[float], top_k: int = 3) -> None:
+    if not residuals:
+        return
+    ranked_indices = sorted(range(len(residuals)), key=lambda idx: abs(residuals[idx]), reverse=True)
+    for idx in ranked_indices[:top_k]:
+        ax.annotate(
+            f"{residuals[idx]:.0f}",
+            (x_values[idx], residuals[idx]),
+            textcoords="offset points",
+            xytext=(6, 5),
+            fontsize=8,
+            alpha=0.9,
+        )
+
+
 def render_and_save(
     mileages: list[float],
     prices: list[float],
@@ -183,11 +227,24 @@ def render_and_save(
     ax_residual.set_xlabel(axis_transform.x_label)
     ax_residual.set_ylabel("Residual\n(actual - pred)")
     ax_residual.grid(alpha=0.2)
+    _annotate_residuals(ax_residual, analysis, theme=theme)
+    _annotate_top_residuals(ax_residual, x_values, analysis.residuals)
 
     if outlier_indices:
         ax_residual.legend(loc="upper right", fontsize=8)
 
-    plt.tight_layout()
+    if axis_transform.normalized and axis_transform.mean is not None and axis_transform.std is not None:
+        fig.suptitle(
+            (
+                "Linear Regression Diagnostics "
+                f"(normalized x-axis; mean={axis_transform.mean:.2f}, std={axis_transform.std:.2f})"
+            ),
+            fontsize=12,
+        )
+    else:
+        fig.suptitle("Linear Regression Diagnostics (raw mileage axis)", fontsize=12)
+
+    plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
     plt.savefig(output_path, dpi=dpi, format=image_format)
     if show:
         plt.show()
