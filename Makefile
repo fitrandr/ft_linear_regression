@@ -12,7 +12,7 @@ PYTHON := $(VENV_PYTHON)
 PIP_PACKAGES ?= matplotlib
 
 DATASET ?= data.csv
-MODEL ?= model.json
+MODEL ?= report_artifacts/model.json
 
 LEARNING_RATE ?= 0.1
 ITERATIONS ?= 10000
@@ -27,10 +27,10 @@ MILEAGE ?= 100000
 PREDICT_JSON ?= 1
 
 EVAL_JSON ?= 1
-EVAL_REPORT ?= evaluation_report.json
-INTERPRET_REPORT ?= interpretation_report.txt
+EVAL_REPORT ?= report_artifacts/evaluation_report.json
+INTERPRET_REPORT ?= report_artifacts/interpretation_report.txt
 
-PLOT_OUTPUT ?= regression_plot
+PLOT_OUTPUT ?= regression_plot_make
 PLOT_FORMAT ?= png
 PLOT_THEME ?= light
 PLOT_X_AXIS ?= raw
@@ -165,7 +165,7 @@ plot: deps
 
 artifacts: train evaluate interpret plot
 	$(call title,Artifacts ready)
-	@printf "$(C_GREEN)Generated:$(C_RESET) %s, %s, %s, %s.%s\n" "$(MODEL)" "$(EVAL_REPORT)" "$(INTERPRET_REPORT)" "$(PLOT_OUTPUT)" "$(PLOT_FORMAT)"
+	@printf "$(C_GREEN)Generated:$(C_RESET) %s, %s, %s, %s/%s.%s\n" "$(MODEL)" "$(EVAL_REPORT)" "$(INTERPRET_REPORT)" "$(PLOT_REPORT_DIR)" "$(PLOT_OUTPUT)" "$(PLOT_FORMAT)"
 
 makeup:
 	$(call title,ML pipeline started)
@@ -186,15 +186,17 @@ makeup:
 
 clean:
 	$(call title,Clean Python caches)
-	$(call run,find . -type d -name '__pycache__' -prune -exec rm -rf {} +)
-	$(call run,find . -type f -name '*.pyc' -delete)
+	$(call run,find . -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true)
+	$(call run,find . -type f -name '*.pyc' -delete 2>/dev/null || true)
 
 fclean: clean
 	$(call title,Clean generated artifacts)
 	$(call run,rm -f $(MODEL) $(EVAL_REPORT) $(INTERPRET_REPORT))
 	$(call run,rm -f regression_plot.png regression_plot.svg regression_plot.pdf)
 	$(call run,rm -f $(PLOT_OUTPUT).png $(PLOT_OUTPUT).svg $(PLOT_OUTPUT).pdf)
-	$(call run,rm -rf $(PLOT_REPORT_DIR) report)
+	@printf "$(C_CYAN)[cmd]$(C_RESET) %s\n" "find $(PLOT_REPORT_DIR) -mindepth 1 ! -name README.md -exec rm -rf {} +"
+	@if [[ -d "$(PLOT_REPORT_DIR)" ]]; then find "$(PLOT_REPORT_DIR)" -mindepth 1 ! -name README.md -exec rm -rf {} +; fi
+	$(call run,rm -rf report)
 	$(call run,rm -rf $(VENV_DIR))
 
 re: fclean makeup

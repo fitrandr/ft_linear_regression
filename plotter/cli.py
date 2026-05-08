@@ -24,6 +24,17 @@ def configure_logging() -> logging.Logger:
     return logger
 
 
+def resolve_output_base(output_arg: str, report_dir: Path | None) -> Path:
+    output_base = Path(output_arg)
+    if report_dir is None:
+        return output_base
+    if output_base.is_absolute():
+        return output_base
+    if output_base.parent == Path("."):
+        return report_dir / output_base.name
+    return output_base
+
+
 def parse_args() -> PlotArgs:
     parser = argparse.ArgumentParser(description="Plot data, regression fit, baseline and residual diagnostics.")
     parser.add_argument("--dataset", default="data.csv", help="Dataset CSV (default: data.csv)")
@@ -66,9 +77,7 @@ def parse_args() -> PlotArgs:
 
     report_dir = Path(ns.report_dir) if ns.report_dir else None
 
-    output_base = Path(ns.output)
-    if report_dir is not None and ns.output == DEFAULT_OUTPUT_BASENAME:
-        output_base = report_dir / DEFAULT_OUTPUT_BASENAME
+    output_base = resolve_output_base(ns.output, report_dir)
 
     output_path = resolve_output_path(output_base, ns.image_format)
 

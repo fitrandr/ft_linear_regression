@@ -2,14 +2,17 @@
 
 Ce dossier contient les artefacts generes par `make plot` (ou `make makeup`) :
 
-- `regression_plot.png` (ou `.svg` / `.pdf` selon `PLOT_FORMAT`)
+- `model.json` : modele entraine
+- `evaluation_report.json` : rapport d'evaluation complet
+- `interpretation_report.txt` : interpretation en langage simple
+- `regression_plot_make.png` (ou `.svg` / `.pdf` selon `PLOT_FORMAT`)
 - `metrics.json` : metriques du modele pour la visualisation
 - `summary.txt` : resume rapide (plot, MSE, RMSE, MAE, outliers)
 
 ## Generer ces fichiers
 
 ```bash
-make plot
+make makeup
 ```
 
 Avec les valeurs par defaut du `Makefile`, la sortie est ecrite dans ce dossier.

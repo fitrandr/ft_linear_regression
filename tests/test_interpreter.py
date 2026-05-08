@@ -117,9 +117,10 @@ class InterpreterTests(unittest.TestCase):
             self.assertAlmostEqual(interpreted.overfit_gap or 0.0, 0.1746, places=3)
 
             text = build_interpretation_text(interpreted)
-            self.assertIn("Model Interpretation Report", text)
+            self.assertIn("Rapport d'interpretation", text)
             self.assertIn("FULL", text)
-            self.assertIn("Conclusion", text)
+            self.assertIn("Resume rapide", text)
+            self.assertIn("Mini dictionnaire", text)
 
     def test_invalid_report_missing_scope_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -103,94 +103,129 @@ def load_interpreted_report(path: Path) -> InterpretedReport:
 
 def _fmt(value: float | None, precision: int = 4) -> str:
     if value is None:
-        return "undefined"
+        return "non defini"
     return f"{value:.{precision}f}"
 
 
-def _quality_label(usefulness: float | None, r2_defined: bool, r2: float | None) -> str:
-    if usefulness is None:
-        return "indeterminate"
-    if usefulness < 0:
-        return "poor"
-    if not r2_defined or r2 is None:
-        return "limited"
-    if usefulness >= 0.70 and r2 >= 0.70:
-        return "strong"
-    if usefulness >= 0.45 and r2 >= 0.45:
-        return "good"
-    if usefulness >= 0.20 and r2 >= 0.20:
-        return "moderate"
-    return "weak"
+def _pct(value: float | None) -> str:
+    if value is None:
+        return "non calcule"
+    return f"{value * 100.0:.1f}%"
 
 
-def _scope_interpretation(scope: ScopeMetrics) -> list[str]:
-    label = _quality_label(scope.usefulness_score, scope.model_r2_defined, scope.model_r2)
-    verdict = "better" if scope.delta_mse > 0 else "worse"
-    lines = [
-        f"- {scope.name.upper()}: model is {verdict} than baseline (ΔMSE={scope.delta_mse:.3f}).",
-        f"  RMSE={scope.model_rmse:.3f}, MAE={scope.model_mae:.3f}, R2={_fmt(scope.model_r2)}.",
-        f"  Usefulness={_fmt(scope.usefulness_score)}, SNR={_fmt(scope.signal_to_noise_ratio)}, quality={label}.",
-        f"  Mean error={scope.model_mean_error:.3f}, outliers={scope.model_outlier_count}.",
-    ]
+def _scope_interpretation_simple(scope: ScopeMetrics) -> list[str]:
+    verdict = "meilleur" if scope.delta_mse > 0 else "moins bon"
+    lines = [f"- {scope.name.upper()}:"]
+    lines.append(f"  - Le modele est {verdict} qu'une methode tres simple (prix moyen).")
+    lines.append(f"  - Erreur moyenne: environ {scope.model_mae:.0f} euros.")
+    lines.append(f"  - Erreur typique: environ {scope.model_rmse:.0f} euros.")
+
+    if scope.model_r2_defined and scope.model_r2 is not None:
+        lines.append(
+            "  - Indice de fiabilite globale (R2): "
+            f"{scope.model_r2:.2f} (plus proche de 1 = mieux)."
+        )
+    else:
+        lines.append("  - Indice de fiabilite globale (R2): non defini.")
+
+    lines.append(f"  - Gain par rapport a la baseline: {_pct(scope.usefulness_score)}.")
+    lines.append(f"  - Points tres atypiques detectes: {scope.model_outlier_count}.")
     return lines
 
 
 def _generalization_note(overfit_gap: float | None) -> str:
     if overfit_gap is None:
-        return "- Generalization gap: undefined (insufficient data)."
+        return "- Ecart train/test: non defini."
     if overfit_gap > 0.20:
-        return f"- Generalization gap: {overfit_gap:.4f} (high; possible overfitting)."
+        return (
+            f"- Ecart train/test: {overfit_gap:.3f}. "
+            "Le modele parait bien meilleur en entrainement qu'en test (risque de surapprentissage)."
+        )
     if overfit_gap > 0.08:
-        return f"- Generalization gap: {overfit_gap:.4f} (moderate; monitor overfitting)."
-    return f"- Generalization gap: {overfit_gap:.4f} (stable train/test behavior)."
+        return (
+            f"- Ecart train/test: {overfit_gap:.3f}. "
+            "Le comportement est correct mais a surveiller."
+        )
+    return f"- Ecart train/test: {overfit_gap:.3f}. Le comportement train/test est stable."
 
 
 def _correlation_note(correlation: float | None) -> str:
     if correlation is None:
-        return "- Correlation(km, price): undefined."
+        return "- Lien kilometrage/prix: non defini."
     strength = abs(correlation)
     if strength >= 0.80:
-        label = "very strong"
+        label = "tres fort"
     elif strength >= 0.60:
-        label = "strong"
+        label = "fort"
     elif strength >= 0.40:
-        label = "moderate"
+        label = "moyen"
     elif strength >= 0.20:
-        label = "weak"
+        label = "faible"
     else:
-        label = "very weak"
-    direction = "negative" if correlation < 0 else "positive"
-    return f"- Correlation(km, price): {correlation:.4f} ({label} {direction})."
+        label = "tres faible"
+
+    if correlation < 0:
+        direction_sentence = "quand le kilometrage monte, le prix baisse."
+    else:
+        direction_sentence = "quand le kilometrage monte, le prix monte."
+    return f"- Lien kilometrage/prix: {label}; {direction_sentence}"
 
 
 def build_interpretation_text(report: InterpretedReport) -> str:
     lines: list[str] = []
-    lines.append("Model Interpretation Report")
-    lines.append("=" * 28)
+    lines.append("Rapport d'interpretation (version simple)")
+    lines.append("=" * 40)
     lines.append(
-        f"Samples: {report.samples} (train={report.train_samples}, test={report.test_samples}, "
-        f"ratio={report.test_ratio}, seed={report.seed})"
+        "Objectif: expliquer avec des mots simples si le modele est utile "
+        "pour estimer le prix."
+    )
+    lines.append(
+        f"Echantillons: {report.samples} (train={report.train_samples}, "
+        f"test={report.test_samples}, ratio test={report.test_ratio}, seed={report.seed})"
     )
     lines.append("")
-    lines.append("Scope Analysis")
-    lines.extend(_scope_interpretation(report.full))
-    lines.extend(_scope_interpretation(report.train))
-    lines.extend(_scope_interpretation(report.test))
+
+    if report.test.delta_mse <= 0:
+        resume = "Le modele n'est pas encore fiable: il fait pire que la baseline sur le test."
+    elif report.test.usefulness_score is not None and report.test.usefulness_score < 0.30:
+        resume = "Le modele est utilisable, mais le gain reste faible."
+    else:
+        resume = "Le modele est globalement utile pour une estimation rapide."
+    lines.append(f"Resume rapide: {resume}")
+
     lines.append("")
-    lines.append("General Diagnostics")
+    lines.append("Lecture simple des resultats")
+    lines.extend(_scope_interpretation_simple(report.full))
+    lines.extend(_scope_interpretation_simple(report.train))
+    lines.extend(_scope_interpretation_simple(report.test))
+
+    lines.append("")
+    lines.append("Ce qu'il faut retenir")
     lines.append(_generalization_note(report.overfit_gap))
     lines.append(_correlation_note(report.correlation))
 
-    if report.test.delta_mse <= 0:
-        action = "Model does not beat baseline on test data; revisit features or hyperparameters."
-    elif report.test.usefulness_score is not None and report.test.usefulness_score < 0.30:
-        action = "Model beats baseline but with low margin; consider richer features or robust tuning."
-    else:
-        action = "Model shows useful predictive signal on test data."
+    lines.append("")
+    lines.append("Mini dictionnaire")
+    lines.append("- MAE: erreur moyenne (en euros). Plus petit = mieux.")
+    lines.append("- RMSE: erreur typique. Plus petit = mieux.")
+    lines.append("- R2: niveau de fiabilite globale. Plus proche de 1 = mieux.")
 
     lines.append("")
-    lines.append("Conclusion")
-    lines.append(f"- {action}")
+    lines.append("Conseil pratique")
+    if report.test.delta_mse <= 0:
+        lines.append(
+            "- Ne pas utiliser ce modele en production pour l'instant. "
+            "Il faut l'ameliorer (donnees, reglages, variables)."
+        )
+    elif report.test.usefulness_score is not None and report.test.usefulness_score < 0.30:
+        lines.append(
+            "- Utilisable pour une premiere estimation, mais pas pour une decision finale."
+        )
+    else:
+        lines.append(
+            "- Bon outil pour une estimation rapide. "
+            "Toujours verifier avec d'autres informations du vehicule."
+        )
     return "\n".join(lines) + "\n"
 
 

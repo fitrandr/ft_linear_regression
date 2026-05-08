@@ -3,11 +3,16 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from plotter.cli import resolve_output_base
 from plotter.render import compute_axis_transform
 from plotter.report import build_analysis, resolve_output_path
 
 
 class PlotterTests(unittest.TestCase):
+    def test_resolve_output_base_uses_report_dir_for_relative_name(self) -> None:
+        resolved = resolve_output_base("regression_plot_make", Path("report_artifacts"))
+        self.assertEqual(resolved, Path("report_artifacts/regression_plot_make"))
+
     def test_resolve_output_path_adds_extension(self) -> None:
         self.assertEqual(
             resolve_output_path(Path("regression_plot"), "png"),
