@@ -12,6 +12,8 @@ interpretation_report.txt
 regression_plot*.png
 regression_plot*.svg
 regression_plot*.pdf
+!docs/assets/regression_plot_light.png
+!docs/assets/regression_plot_dark.png
 
 # Plot reports
 report_make/

@@ -11,6 +11,12 @@ This directory stores generated outputs produced by the training, evaluation, in
 - `metrics.json`: plot-oriented metrics bundle
 - `summary.txt`: short summary of key metrics
 
+These files are used as real examples in the main project documentation:
+
+- [README.md](../README.md)
+- [docs/API.md](../docs/API.md)
+- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+
 ## Generate artifacts with Makefile
 
 Run the complete pipeline:
