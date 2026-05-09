@@ -91,7 +91,12 @@ ft_linear_regression/
 │   ├── API.md
 │   └── assets/
 │       ├── regression_plot_light.png
-│       └── regression_plot_dark.png
+│       ├── regression_plot_dark.png
+│       ├── regression_dark.png
+│       ├── residuals_dark.png
+│       ├── predicted_vs_actual_dark.png
+│       ├── error_distribution_dark.png
+│       └── gradient_descent_training_dark.gif
 └── report_artifacts/
     ├── model.json
     ├── evaluation_report.json
@@ -270,15 +275,35 @@ Evaluation output (snippet):
 }
 ```
 
-## Screenshots (plot diagnostics)
+## Screenshots (all graphs)
 
-Light theme:
+Dashboard (light theme):
 
 ![Light plot diagnostics](docs/assets/regression_plot_light.png)
 
-Dark theme:
+Dashboard (dark theme):
 
 ![Dark plot diagnostics](docs/assets/regression_plot_dark.png)
+
+Regression panel (dark):
+
+![Regression panel](docs/assets/regression_dark.png)
+
+Residual plot (dark):
+
+![Residual panel](docs/assets/residuals_dark.png)
+
+Actual vs predicted (dark):
+
+![Actual vs predicted](docs/assets/predicted_vs_actual_dark.png)
+
+Error distribution histogram (dark):
+
+![Error histogram](docs/assets/error_distribution_dark.png)
+
+Gradient descent animation (dark):
+
+![Gradient descent animation](docs/assets/gradient_descent_training_dark.gif)
 
 ## Plot diagnostics toolkit
 
