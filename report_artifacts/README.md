@@ -39,6 +39,12 @@ Generate plot in dark SVG mode:
 make plot PLOT_THEME=dark PLOT_FORMAT=svg
 ```
 
+Generate plot with a custom output accent color:
+
+```bash
+make plot PLOT_THEME=dark PLOT_OUTPUT_COLOR=22c55e
+```
+
 Generate full diagnostic image set:
 
 ```bash
@@ -47,6 +53,8 @@ Generate full diagnostic image set:
   --model report_artifacts/model.json \
   --output report_artifacts/regression_plot_make \
   --format png \
+  --theme dark \
+  --output-color '#22c55e' \
   --report-dir report_artifacts \
   --generate-report-images
 ```

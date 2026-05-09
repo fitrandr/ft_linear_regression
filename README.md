@@ -187,6 +187,7 @@ make predict MILEAGE=85000
 make evaluate
 make interpret
 make plot
+make plot PLOT_OUTPUT_COLOR=22c55e
 make test
 ```
 
@@ -196,7 +197,7 @@ make test
 .venv/bin/python train.py --dataset data.csv --model report_artifacts/model.json
 .venv/bin/python evaluate.py --dataset data.csv --model report_artifacts/model.json --report report_artifacts/evaluation_report.json
 .venv/bin/python interpret.py --report report_artifacts/evaluation_report.json --output report_artifacts/interpretation_report.txt
-.venv/bin/python plot.py --dataset data.csv --model report_artifacts/model.json --output report_artifacts/regression_plot_make --report-dir report_artifacts --generate-report-images
+.venv/bin/python plot.py --dataset data.csv --model report_artifacts/model.json --output report_artifacts/regression_plot_make --report-dir report_artifacts --theme dark --output-color '#22c55e' --generate-report-images
 .venv/bin/python predict.py --model report_artifacts/model.json --mileage 100000 --json
 ```
 
@@ -321,7 +322,8 @@ The plotting module now provides a full analytics dashboard and report images:
   - actual vs predicted plot
 - Train/test split visualization (`--test-ratio`, `--seed`)
 - Outlier highlighting from residual z-scores
-- Theme support (`--theme light|dark`)
+- Theme support (`--theme light|dark`, default: `dark`)
+- Output accent color override (`--output-color '#RRGGBB'` or `--output-color RRGGBB`)
 - Multi-format export (`--format png|svg|pdf`)
 - Optional generation of separate diagnostic images (`--generate-report-images`)
 - Optional gradient descent animation GIF (`--animate-training`)

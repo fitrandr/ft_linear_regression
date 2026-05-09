@@ -13,6 +13,10 @@ from .report import metrics_annotation
 from .theme import PlotTheme, apply_theme_style, resolve_theme
 
 
+def _resolve_output_color(theme: PlotTheme, output_color: str | None) -> str:
+    return theme.regression if output_color is None else output_color
+
+
 def _import_pyplot(show: bool):
     try:
         if "MPLCONFIGDIR" not in os.environ:
@@ -144,7 +148,9 @@ def _plot_regression_panel(
     analysis: PlotAnalysis,
     groups: dict[str, list[int]],
     theme: PlotTheme,
+    output_color: str | None,
 ) -> None:
+    accent_color = _resolve_output_color(theme, output_color)
     order = sorted(range(len(x_values)), key=lambda idx: x_values[idx])
     x_sorted = [x_values[idx] for idx in order]
     pred_sorted = [predictions[idx] for idx in order]
@@ -191,7 +197,7 @@ def _plot_regression_panel(
             zorder=6,
         )
 
-    ax.plot(x_sorted, pred_sorted, color=theme.regression, linewidth=2.4, label="Regression line")
+    ax.plot(x_sorted, pred_sorted, color=accent_color, linewidth=2.4, label="Regression line")
     ax.plot(
         x_sorted,
         [analysis.baseline_value] * len(x_sorted),
@@ -273,8 +279,14 @@ def _plot_residual_panel(
     ax.legend(loc="best", fontsize=8)
 
 
-def _plot_error_histogram(ax, residuals: list[float], theme: PlotTheme) -> None:
-    ax.hist(residuals, bins=15, color=theme.regression, alpha=0.75, edgecolor=theme.grid)
+def _plot_error_histogram(
+    ax,
+    residuals: list[float],
+    theme: PlotTheme,
+    output_color: str | None,
+) -> None:
+    accent_color = _resolve_output_color(theme, output_color)
+    ax.hist(residuals, bins=15, color=accent_color, alpha=0.75, edgecolor=theme.grid)
     mean_residual = sum(residuals) / len(residuals)
     ax.axvline(0.0, color=theme.grid, linewidth=1.3, linestyle="--", label="Zero error")
     ax.axvline(mean_residual, color=theme.outlier, linewidth=1.3, label="Mean residual")
@@ -378,6 +390,7 @@ def _draw_dashboard(
     model: Model,
     analysis: PlotAnalysis,
     theme: PlotTheme,
+    output_color: str | None,
     x_axis: str,
 ):
     axis_transform = compute_axis_transform(mileages, x_axis=x_axis)
@@ -391,9 +404,18 @@ def _draw_dashboard(
 
     groups = _indices(is_test_flags, analysis.outlier_flags)
 
-    _plot_regression_panel(ax_main, x_values, prices, predictions, analysis, groups, theme)
+    _plot_regression_panel(
+        ax_main,
+        x_values,
+        prices,
+        predictions,
+        analysis,
+        groups,
+        theme,
+        output_color,
+    )
     _plot_residual_panel(ax_residual, x_values, analysis.residuals, groups, analysis, theme)
-    _plot_error_histogram(ax_hist, analysis.residuals, theme)
+    _plot_error_histogram(ax_hist, analysis.residuals, theme, output_color)
     _plot_actual_vs_predicted(ax_pred, prices, predictions, groups, theme, analysis)
 
     _annotate_metrics(ax_main, analysis, model, theme)
@@ -439,6 +461,7 @@ def render_report_images(
     is_test_flags: list[bool],
     analysis: PlotAnalysis,
     theme_name: str,
+    output_color: str | None,
     x_axis: str,
     image_paths: ReportImagePaths,
     dpi: int,
@@ -452,7 +475,16 @@ def render_report_images(
     groups = _indices(is_test_flags, analysis.outlier_flags)
 
     def draw_regression(ax):
-        _plot_regression_panel(ax, x_values, prices, predictions, analysis, groups, theme)
+        _plot_regression_panel(
+            ax,
+            x_values,
+            prices,
+            predictions,
+            analysis,
+            groups,
+            theme,
+            output_color,
+        )
         ax.set_xlabel(axis_transform.x_label)
 
     def draw_residual(ax):
@@ -461,7 +493,7 @@ def render_report_images(
         _annotate_residuals(ax, analysis, theme)
 
     def draw_hist(ax):
-        _plot_error_histogram(ax, analysis.residuals, theme)
+        _plot_error_histogram(ax, analysis.residuals, theme, output_color)
 
     def draw_actual_vs_pred(ax):
         _plot_actual_vs_predicted(ax, prices, predictions, groups, theme, analysis)
@@ -480,6 +512,7 @@ def render_training_animation(
     dpi: int,
     fps: int,
     theme_name: str,
+    output_color: str | None,
     is_test_flags: list[bool],
 ) -> None:
     if not frames:
@@ -522,7 +555,13 @@ def render_training_animation(
             label="Test points",
         )
 
-    line, = ax.plot([], [], color=theme.regression, linewidth=2.5, label="Gradient descent line")
+    line, = ax.plot(
+        [],
+        [],
+        color=_resolve_output_color(theme, output_color),
+        linewidth=2.5,
+        label="Gradient descent line",
+    )
     status = ax.text(0.02, 0.98, "", transform=ax.transAxes, va="top", ha="left", fontsize=9)
 
     ax.set_title("Gradient Descent Animation")
@@ -570,6 +609,7 @@ def render_and_save(
     dpi: int,
     show: bool,
     theme_name: str,
+    output_color: str | None,
     x_axis: str,
 ) -> None:
     plt = _import_pyplot(show=show)
@@ -585,6 +625,7 @@ def render_and_save(
         model,
         analysis,
         theme,
+        output_color,
         x_axis,
     )
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 import tempfile
+from unittest.mock import patch
 
 from predictor.model import Model
-from plotter.cli import resolve_output_base
+from plotter.cli import parse_args, resolve_output_base, validate_output_color
 from plotter.diagnostics import build_gradient_descent_frames, build_test_flags
 from plotter.export import build_report_image_paths
 from plotter.render import compute_axis_transform
@@ -13,6 +14,27 @@ from plotter.report import build_analysis, metrics_annotation, resolve_output_pa
 
 
 class PlotterTests(unittest.TestCase):
+    def test_parse_args_defaults_to_dark_theme(self) -> None:
+        with patch("sys.argv", ["plot.py"]):
+            args = parse_args()
+        self.assertEqual(args.theme, "dark")
+        self.assertIsNone(args.output_color)
+
+    def test_validate_output_color_accepts_hex(self) -> None:
+        self.assertEqual(validate_output_color("#22C55E"), "#22C55E")
+        self.assertEqual(validate_output_color("  #22c55e  "), "#22c55e")
+        self.assertEqual(validate_output_color("22c55e"), "#22c55e")
+        self.assertIsNone(validate_output_color(None))
+        self.assertIsNone(validate_output_color("   "))
+
+    def test_validate_output_color_rejects_invalid_values(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_output_color("22c55")
+        with self.assertRaises(ValueError):
+            validate_output_color("#22c55g")
+        with self.assertRaises(ValueError):
+            validate_output_color("#zzzzzz")
+
     def test_resolve_output_base_uses_report_dir_for_relative_name(self) -> None:
         resolved = resolve_output_base("regression_plot_make", Path("report_artifacts"))
         self.assertEqual(resolved, Path("report_artifacts/regression_plot_make"))

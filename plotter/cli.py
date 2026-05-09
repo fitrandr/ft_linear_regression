@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 from pathlib import Path
 
 from .diagnostics import build_gradient_descent_frames
@@ -12,6 +13,7 @@ from .render import render_and_save, render_report_images, render_training_anima
 from .report import build_analysis, resolve_output_path, save_report_bundle
 
 LOGGER_NAME = "ft_linear_regression.plot"
+HEX_COLOR_RE = re.compile(r"^#?[0-9A-Fa-f]{6}$")
 
 
 def configure_logging() -> logging.Logger:
@@ -37,6 +39,19 @@ def resolve_output_base(output_arg: str, report_dir: Path | None) -> Path:
     return output_base
 
 
+def validate_output_color(raw_color: str | None) -> str | None:
+    if raw_color is None:
+        return None
+    candidate = raw_color.strip()
+    if candidate == "":
+        return None
+    if not HEX_COLOR_RE.fullmatch(candidate):
+        raise ValueError("output color must be in #RRGGBB format (example: #22c55e).")
+    if not candidate.startswith("#"):
+        candidate = f"#{candidate}"
+    return candidate
+
+
 def parse_args() -> PlotArgs:
     parser = argparse.ArgumentParser(description="Plot data, regression fit, baseline and residual diagnostics.")
     parser.add_argument("--dataset", default="data.csv", help="Dataset CSV (default: data.csv)")
@@ -58,8 +73,12 @@ def parse_args() -> PlotArgs:
     parser.add_argument(
         "--theme",
         choices=("light", "dark"),
-        default="light",
-        help="Plot theme (default: light)",
+        default="dark",
+        help="Plot theme (default: dark)",
+    )
+    parser.add_argument(
+        "--output-color",
+        help="Optional accent color in #RRGGBB (or RRGGBB) format.",
     )
     parser.add_argument(
         "--x-axis",
@@ -119,6 +138,10 @@ def parse_args() -> PlotArgs:
         parser.error("--animation-iterations must be > 0.")
     if ns.animation_fps <= 0:
         parser.error("--animation-fps must be > 0.")
+    try:
+        output_color = validate_output_color(ns.output_color)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     report_dir = Path(ns.report_dir) if ns.report_dir else None
 
@@ -133,6 +156,7 @@ def parse_args() -> PlotArgs:
         image_format=ns.image_format,
         show=ns.show,
         theme=ns.theme,
+        output_color=output_color,
         x_axis=ns.x_axis,
         test_ratio=ns.test_ratio,
         seed=ns.seed,
@@ -172,6 +196,7 @@ def main() -> None:
             dpi=args.dpi,
             show=args.show,
             theme_name=args.theme,
+            output_color=args.output_color,
             x_axis=args.x_axis,
         )
 
@@ -190,6 +215,7 @@ def main() -> None:
                     is_test_flags=loaded.is_test_flags,
                     analysis=analysis,
                     theme_name=args.theme,
+                    output_color=args.output_color,
                     x_axis=args.x_axis,
                     image_paths=image_paths,
                     dpi=args.dpi,
@@ -218,6 +244,7 @@ def main() -> None:
                 dpi=args.dpi,
                 fps=args.animation_fps,
                 theme_name=args.theme,
+                output_color=args.output_color,
                 is_test_flags=loaded.is_test_flags,
             )
             logger.info("Training animation saved to %s", animation_path)

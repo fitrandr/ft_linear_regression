@@ -118,6 +118,11 @@ The project is split into five module groups:
 - `resolve_theme(theme_name) -> PlotTheme`
 - `apply_theme_style(plt, theme) -> None`
 
+### `plotter.cli`
+
+- `parse_args() -> PlotArgs`
+- `validate_output_color(raw_color: str | None) -> str | None`
+
 ### `plotter.export`
 
 - `build_report_image_paths(report_dir, image_format) -> ReportImagePaths`
@@ -132,9 +137,9 @@ The project is split into five module groups:
 ### `plotter.render`
 
 - `compute_axis_transform(mileages: list[float], x_axis: str) -> AxisTransform`
-- `render_and_save(mileages, prices, predictions, is_test_flags, model, analysis, output_path, image_format, dpi, show, theme_name, x_axis) -> None`
-- `render_report_images(mileages, prices, predictions, is_test_flags, analysis, theme_name, x_axis, image_paths, dpi) -> None`
-- `render_training_animation(mileages, prices, frames, output_path, dpi, fps, theme_name, is_test_flags) -> None`
+- `render_and_save(mileages, prices, predictions, is_test_flags, model, analysis, output_path, image_format, dpi, show, theme_name, output_color, x_axis) -> None`
+- `render_report_images(mileages, prices, predictions, is_test_flags, analysis, theme_name, output_color, x_axis, image_paths, dpi) -> None`
+- `render_training_animation(mileages, prices, frames, output_path, dpi, fps, theme_name, output_color, is_test_flags) -> None`
 
 ### Core dataclasses (`plotter.model`)
 

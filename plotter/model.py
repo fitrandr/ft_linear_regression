@@ -17,6 +17,7 @@ class PlotArgs:
     image_format: str
     show: bool
     theme: str
+    output_color: str | None
     x_axis: str
     test_ratio: float
     seed: int
