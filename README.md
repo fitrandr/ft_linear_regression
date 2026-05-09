@@ -280,6 +280,7 @@ Evaluation output (snippet):
 ## Screenshots (all graphs)
 
 Latest generated dashboard (auto-refreshed after each `make makeup`):
+`docs/assets/dashboard_latest.png` (README image) and `report_artifacts/dashboard_latest.png` (artifact copy).
 
 ![Latest dashboard](docs/assets/dashboard_latest.png)
 
@@ -334,6 +335,7 @@ Generated report images (when `--generate-report-images` is enabled):
 - `report_artifacts/residuals.<format>`
 - `report_artifacts/predicted_vs_actual.<format>`
 - `report_artifacts/error_distribution.<format>`
+- `report_artifacts/dashboard_latest.png` (copied automatically by `make readme-dashboard` / `make makeup`)
 
 ## Metrics explained
 

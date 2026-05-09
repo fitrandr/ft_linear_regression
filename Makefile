@@ -49,6 +49,7 @@ README_DASHBOARD_OUTPUT_COLOR ?=
 README_DASHBOARD_X_AXIS ?= raw
 README_DASHBOARD_DPI ?= 150
 README_DASHBOARD_OUTPUT ?= docs/assets/dashboard_latest
+REPORT_DASHBOARD_OUTPUT ?= report_artifacts/dashboard_latest
 
 C_RESET := \033[0m
 C_BOLD := \033[1m
@@ -133,13 +134,13 @@ help:
 	@printf "  $(C_GREEN)evaluate$(C_RESET)  Evaluate model + save $(EVAL_REPORT)\n"
 	@printf "  $(C_GREEN)interpret$(C_RESET) Interpret evaluation report into $(INTERPRET_REPORT)\n"
 	@printf "  $(C_GREEN)plot$(C_RESET)      Render regression diagnostics plot\n"
-	@printf "  $(C_GREEN)readme-dashboard$(C_RESET) Render docs/assets/dashboard_latest.png\n"
+	@printf "  $(C_GREEN)readme-dashboard$(C_RESET) Render dashboard image for docs and report_artifacts\n"
 	@printf "  $(C_GREEN)artifacts$(C_RESET) Run train + evaluate + plot + readme-dashboard\n"
 	@printf "  $(C_GREEN)makeup$(C_RESET)    Full pipeline: doctor, lint, test, artifacts, predict\n"
 	@printf "  $(C_GREEN)clean$(C_RESET)     Remove Python cache files\n"
 	@printf "  $(C_GREEN)fclean$(C_RESET)    clean + generated artifacts\n"
 	@printf "  $(C_GREEN)re$(C_RESET)        fclean then makeup\n"
-	@printf "\n$(C_BOLD)Common variables$(C_RESET): DATASET MODEL LEARNING_RATE ITERATIONS TEST_RATIO SEED MILEAGE PLOT_FORMAT PLOT_THEME PLOT_OUTPUT_COLOR PLOT_SHOW PLOT_GENERATE_REPORT_IMAGES PLOT_ANIMATE PLOT_ANIMATION_ITERATIONS PLOT_ANIMATION_FPS README_DASHBOARD_THEME README_DASHBOARD_OUTPUT_COLOR VENV_DIR PIP_PACKAGES INTERPRET_REPORT\n"
+	@printf "\n$(C_BOLD)Common variables$(C_RESET): DATASET MODEL LEARNING_RATE ITERATIONS TEST_RATIO SEED MILEAGE PLOT_FORMAT PLOT_THEME PLOT_OUTPUT_COLOR PLOT_SHOW PLOT_GENERATE_REPORT_IMAGES PLOT_ANIMATE PLOT_ANIMATION_ITERATIONS PLOT_ANIMATION_FPS README_DASHBOARD_THEME README_DASHBOARD_OUTPUT_COLOR VENV_DIR PIP_PACKAGES INTERPRET_REPORT REPORT_DASHBOARD_OUTPUT\n"
 	@printf "Example: make makeup ITERATIONS=2000 MILEAGE=85000 PLOT_THEME=dark PLOT_OUTPUT_COLOR=22c55e\n"
 
 $(VENV_PYTHON):
@@ -200,11 +201,14 @@ plot: deps
 readme-dashboard: venv
 	$(call title,Render README dashboard image)
 	$(call run,$(README_DASHBOARD_CMD))
+	$(call run,mkdir -p $(dir $(REPORT_DASHBOARD_OUTPUT)))
+	$(call run,cp $(README_DASHBOARD_OUTPUT).png $(REPORT_DASHBOARD_OUTPUT).png)
 	@printf "$(C_GREEN)README dashboard:$(C_RESET) %s.png\n" "$(README_DASHBOARD_OUTPUT)"
+	@printf "$(C_GREEN)Report dashboard:$(C_RESET) %s.png\n" "$(REPORT_DASHBOARD_OUTPUT)"
 
 artifacts: train evaluate interpret plot readme-dashboard
 	$(call title,Artifacts ready)
-	@printf "$(C_GREEN)Generated:$(C_RESET) %s, %s, %s, %s/%s.%s, %s.png\n" "$(MODEL)" "$(EVAL_REPORT)" "$(INTERPRET_REPORT)" "$(PLOT_REPORT_DIR)" "$(PLOT_OUTPUT)" "$(PLOT_FORMAT)" "$(README_DASHBOARD_OUTPUT)"
+	@printf "$(C_GREEN)Generated:$(C_RESET) %s, %s, %s, %s/%s.%s, %s.png, %s.png\n" "$(MODEL)" "$(EVAL_REPORT)" "$(INTERPRET_REPORT)" "$(PLOT_REPORT_DIR)" "$(PLOT_OUTPUT)" "$(PLOT_FORMAT)" "$(README_DASHBOARD_OUTPUT)" "$(REPORT_DASHBOARD_OUTPUT)"
 
 makeup:
 	$(call title,ML pipeline started)
