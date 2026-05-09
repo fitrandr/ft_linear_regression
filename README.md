@@ -92,6 +92,7 @@ ft_linear_regression/
 │   └── assets/
 │       ├── regression_plot_light.png
 │       ├── regression_plot_dark.png
+│       ├── dashboard_latest.png
 │       ├── regression_dark.png
 │       ├── residuals_dark.png
 │       ├── predicted_vs_actual_dark.png
@@ -276,6 +277,10 @@ Evaluation output (snippet):
 ```
 
 ## Screenshots (all graphs)
+
+Latest generated dashboard (auto-refreshed after each `make makeup`):
+
+![Latest dashboard](docs/assets/dashboard_latest.png)
 
 Dashboard (light theme):
 

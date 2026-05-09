@@ -43,6 +43,10 @@ PLOT_GENERATE_REPORT_IMAGES ?= 1
 PLOT_ANIMATE ?= 0
 PLOT_ANIMATION_ITERATIONS ?= 120
 PLOT_ANIMATION_FPS ?= 8
+README_DASHBOARD_THEME ?= light
+README_DASHBOARD_X_AXIS ?= raw
+README_DASHBOARD_DPI ?= 150
+README_DASHBOARD_OUTPUT ?= docs/assets/dashboard_latest
 
 C_RESET := \033[0m
 C_BOLD := \033[1m
@@ -83,6 +87,7 @@ else
 PLOT_ANIMATE_FLAG :=
 endif
 PLOT_CMD = $(PYTHON) plot.py --dataset $(DATASET) --model $(MODEL) --output $(PLOT_OUTPUT) --format $(PLOT_FORMAT) --theme $(PLOT_THEME) --x-axis $(PLOT_X_AXIS) --dpi $(PLOT_DPI) --report-dir $(PLOT_REPORT_DIR) --test-ratio $(PLOT_TEST_RATIO) --seed $(PLOT_SEED) $(PLOT_REPORT_IMAGES_FLAG) $(PLOT_ANIMATE_FLAG) $(PLOT_SHOW_FLAG)
+README_DASHBOARD_CMD = $(PYTHON) plot.py --dataset $(DATASET) --model $(MODEL) --output $(README_DASHBOARD_OUTPUT) --format png --theme $(README_DASHBOARD_THEME) --x-axis $(README_DASHBOARD_X_AXIS) --dpi $(README_DASHBOARD_DPI) --test-ratio $(PLOT_TEST_RATIO) --seed $(PLOT_SEED)
 INTERPRET_CMD = $(PYTHON) interpret.py --report $(EVAL_REPORT) --output $(INTERPRET_REPORT)
 
 TEST_CMD = $(PYTHON) -m unittest discover -s tests -p 'test_*.py' -q
@@ -99,7 +104,7 @@ define title
 	@printf "\n$(C_BOLD)$(C_BLUE)==> %s$(C_RESET)\n" "$(1)"
 endef
 
-.PHONY: help venv deps doctor lint test train predict evaluate interpret plot artifacts makeup all clean fclean re
+.PHONY: help venv deps doctor lint test train predict evaluate interpret plot readme-dashboard artifacts makeup all clean fclean re
 
 all: makeup
 
@@ -116,13 +121,14 @@ help:
 	@printf "  $(C_GREEN)evaluate$(C_RESET)  Evaluate model + save $(EVAL_REPORT)\n"
 	@printf "  $(C_GREEN)interpret$(C_RESET) Interpret evaluation report into $(INTERPRET_REPORT)\n"
 	@printf "  $(C_GREEN)plot$(C_RESET)      Render regression diagnostics plot\n"
-	@printf "  $(C_GREEN)artifacts$(C_RESET) Run train + evaluate + plot\n"
+	@printf "  $(C_GREEN)readme-dashboard$(C_RESET) Render docs/assets/dashboard_latest.png\n"
+	@printf "  $(C_GREEN)artifacts$(C_RESET) Run train + evaluate + plot + readme-dashboard\n"
 	@printf "  $(C_GREEN)makeup$(C_RESET)    Full pipeline: doctor, lint, test, artifacts, predict\n"
 	@printf "  $(C_GREEN)clean$(C_RESET)     Remove Python cache files\n"
 	@printf "  $(C_GREEN)fclean$(C_RESET)    clean + generated artifacts\n"
 	@printf "  $(C_GREEN)re$(C_RESET)        fclean then makeup\n"
-	@printf "\n$(C_BOLD)Common variables$(C_RESET): DATASET MODEL LEARNING_RATE ITERATIONS TEST_RATIO SEED MILEAGE PLOT_FORMAT PLOT_THEME PLOT_SHOW PLOT_GENERATE_REPORT_IMAGES PLOT_ANIMATE PLOT_ANIMATION_ITERATIONS PLOT_ANIMATION_FPS VENV_DIR PIP_PACKAGES INTERPRET_REPORT\n"
-	@printf "Example: make makeup ITERATIONS=2000 MILEAGE=85000 PLOT_THEME=dark PLOT_ANIMATE=1\n"
+	@printf "\n$(C_BOLD)Common variables$(C_RESET): DATASET MODEL LEARNING_RATE ITERATIONS TEST_RATIO SEED MILEAGE PLOT_FORMAT PLOT_THEME PLOT_SHOW PLOT_GENERATE_REPORT_IMAGES PLOT_ANIMATE PLOT_ANIMATION_ITERATIONS PLOT_ANIMATION_FPS README_DASHBOARD_THEME VENV_DIR PIP_PACKAGES INTERPRET_REPORT\n"
+	@printf "Example: make makeup ITERATIONS=2000 MILEAGE=85000 PLOT_THEME=dark README_DASHBOARD_THEME=light\n"
 
 $(VENV_PYTHON):
 	$(call title,Create virtual environment)
@@ -179,9 +185,14 @@ plot: deps
 	$(call title,Render diagnostics plot)
 	$(call run,$(PLOT_CMD))
 
-artifacts: train evaluate interpret plot
+readme-dashboard: venv
+	$(call title,Render README dashboard image)
+	$(call run,$(README_DASHBOARD_CMD))
+	@printf "$(C_GREEN)README dashboard:$(C_RESET) %s.png\n" "$(README_DASHBOARD_OUTPUT)"
+
+artifacts: train evaluate interpret plot readme-dashboard
 	$(call title,Artifacts ready)
-	@printf "$(C_GREEN)Generated:$(C_RESET) %s, %s, %s, %s/%s.%s\n" "$(MODEL)" "$(EVAL_REPORT)" "$(INTERPRET_REPORT)" "$(PLOT_REPORT_DIR)" "$(PLOT_OUTPUT)" "$(PLOT_FORMAT)"
+	@printf "$(C_GREEN)Generated:$(C_RESET) %s, %s, %s, %s/%s.%s, %s.png\n" "$(MODEL)" "$(EVAL_REPORT)" "$(INTERPRET_REPORT)" "$(PLOT_REPORT_DIR)" "$(PLOT_OUTPUT)" "$(PLOT_FORMAT)" "$(README_DASHBOARD_OUTPUT)"
 
 makeup:
 	$(call title,ML pipeline started)
